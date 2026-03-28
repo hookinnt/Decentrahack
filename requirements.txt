@@ -1,0 +1,7 @@
+google-generativeai
+pydantic
+python-dotenv
+colorama
+solana
+solders
+flask
