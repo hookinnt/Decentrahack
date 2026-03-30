@@ -18,11 +18,13 @@ pub mod solana_risk_manager {
         treasury.bump = ctx.bumps.treasury_state;
         treasury.pause_count = 0;
         treasury.last_risk_score = 0;
+        treasury.risk_threshold = 80; // Default: 80/100
         treasury.last_updated = clock.unix_timestamp;
 
         msg!(
-            "[INIT] TreasuryState initialized. Authority: {}. TS: {}",
+            "[INIT] TreasuryState initialized. Authority: {}. Threshold: {}. TS: {}",
             treasury.authority,
+            treasury.risk_threshold,
             treasury.last_updated
         );
         Ok(())
@@ -35,8 +37,9 @@ pub mod solana_risk_manager {
         risk_score: u8,
         reason: String,
     ) -> Result<()> {
-        // Validate AI-supplied parameters
-        require!(risk_score >= 80, CustomError::RiskScoreTooLow);
+        // Validate AI-supplied parameters against DYNAMIC on-chain threshold
+        let threshold = ctx.accounts.treasury_state.risk_threshold;
+        require!(risk_score >= threshold, CustomError::RiskScoreTooLow);
         require!(reason.len() <= 200, CustomError::ReasonTooLong);
         require!(
             !ctx.accounts.treasury_state.is_paused,
@@ -86,6 +89,28 @@ pub mod solana_risk_manager {
             "[OK] Treasury resumed by authority: {}. TS: {}",
             ctx.accounts.authority.key(),
             treasury.last_updated
+        );
+        Ok(())
+    }
+
+    /// Dynamically update the risk sensitivity threshold.
+    /// This is the core of the DARS (Dynamic Autonomous Risk Sensitivity) feature.
+    pub fn update_threshold(ctx: Context<TriggerPause>, new_threshold: u8) -> Result<()> {
+        // Validate threshold range (e.g. 50-95)
+        require!(
+            new_threshold >= 50 && new_threshold <= 95,
+            CustomError::ThresholdOutOfRange
+        );
+
+        let treasury = &mut ctx.accounts.treasury_state;
+        let clock = Clock::get()?;
+
+        treasury.risk_threshold = new_threshold;
+        treasury.last_updated = clock.unix_timestamp;
+
+        msg!(
+            "[CONFIG] Sensitivity threshold updated to: {}/100 by AI Oracle authority.",
+            new_threshold
         );
         Ok(())
     }
@@ -149,13 +174,16 @@ pub struct TreasuryState {
     /// Risk score from the last AI assessment that triggered a pause.
     pub last_risk_score: u8,    // 1  byte
 
+    /// Dynamic sensitivity threshold for emergency_pause (Case 2 Adaptive Logic).
+    pub risk_threshold: u8,     // 1  byte
+
     /// Unix timestamp of the last AI-triggered action.
     pub last_updated: i64,      // 8  bytes
 }
 
 impl TreasuryState {
-    // 1 + 32 + 1 + 4 + 1 + 8 = 47 bytes
-    pub const SIZE: usize = 47;
+    // 1 + 32 + 1 + 4 + 1 + 1 + 8 = 48 bytes
+    pub const SIZE: usize = 48;
 }
 
 // ─── Events ───────────────────────────────────────────────────────────────────
@@ -177,8 +205,11 @@ pub enum CustomError {
     #[msg("Access denied. Only the authorized AI Oracle authority can call this instruction.")]
     UnauthorizedUser,
 
-    #[msg("Risk score must be >= 80 to trigger an emergency pause.")]
+    #[msg("Risk score must be >= the active on-chain threshold to trigger an emergency pause.")]
     RiskScoreTooLow,
+
+    #[msg("Threshold must be between 50 and 95.")]
+    ThresholdOutOfRange,
 
     #[msg("Reason string exceeds the 200-character limit.")]
     ReasonTooLong,

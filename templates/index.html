@@ -434,6 +434,7 @@
                     <div class="info-row"><span class="info-key">Network</span><span class="info-val" id="infoCluster">—</span></div>
                     <div class="info-row"><span class="info-key">Solana Version</span><span class="info-val" id="infoVersion">—</span></div>
                     <div class="info-row"><span class="info-key">Agent Balance</span><span class="info-val green" id="infoBalance">—</span></div>
+                    <div class="info-row"><span class="info-key">DARS Threshold</span><span class="info-val" id="infoThreshold" style="color:var(--sol-purple)">—</span></div>
                     <div class="info-row"><span class="info-key">RPC</span><span class="info-val" id="infoRpc">—</span></div>
                 </div>
             </div>
@@ -502,7 +503,7 @@
                 document.getElementById('infoCluster').textContent  = data.cluster || 'devnet';
                 document.getElementById('infoVersion').textContent  = data.solana_version || '—';
                 document.getElementById('infoBalance').textContent  = data.agent_balance_sol + ' SOL';
-                document.getElementById('infoRpc').textContent      = 'api.devnet.solana.com';
+                document.getElementById('infoThreshold').textContent = (data.risk_threshold || 80) + '/100';
                 document.getElementById('agentPubkey').textContent  = data.agent_pubkey || '—';
             } else {
                 throw new Error(data.error || 'Disconnected');
@@ -594,6 +595,15 @@
 
             // Reason
             document.getElementById('reasonText').textContent = data.reason;
+
+            // DARS Update Note
+            if (data.threshold_updated) {
+                const note = document.createElement('div');
+                note.style = "margin-top: 1rem; font-size: 0.72rem; color: var(--sol-purple); font-weight: 600; display: flex; align-items: center; gap: 6px;";
+                note.innerHTML = `<span>⚡</span> AI ADAPTIVE GOVERNANCE: On-chain threshold updated to ${data.recommended_threshold}/100`;
+                document.getElementById('resultCard').appendChild(note);
+                loadStatus(); // refresh threshold display
+            }
 
             // TX log
             const txWrap = document.getElementById('txLogWrap');

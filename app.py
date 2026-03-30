@@ -6,7 +6,12 @@ warnings.filterwarnings('ignore')
 from flask import Flask, request, jsonify, render_template
 from agent.analyzer import AIAnalyzer
 from agent.models import NewsItem
-from agent.solana_client import verify_solana_or_crash, execute_emergency_pause, get_status
+from agent.solana_client import (
+    verify_solana_or_crash, 
+    execute_emergency_pause, 
+    execute_threshold_update,
+    get_status
+)
 
 # Silence Flask's request logs — we print our own
 log = logging.getLogger('werkzeug')
@@ -73,10 +78,24 @@ def analyze():
             "risk_score": assessment.risk_score,
             "reason": assessment.reason,
             "action_required": assessment.action_required,
+            "recommended_threshold": assessment.recommended_threshold
         }
 
+        # DARS logic: Autonomous threshold adjustment
+        if assessment.recommended_threshold:
+            # Fetch current status to check if adjustment is needed
+            status = get_status()
+            current_threshold = status.get("risk_threshold", 80)
+            
+            # Significant change (>= 5 points) triggers a configuration update on-chain
+            if abs(assessment.recommended_threshold - current_threshold) >= 5:
+                execute_threshold_update(assessment.recommended_threshold)
+                response_data["threshold_updated"] = True
+
         # Send a real blockchain transaction if the AI flags a critical threat
-        if assessment.action_required and assessment.risk_score >= 80:
+        # Threshold is now dynamic based on AI recommendation or on-chain state
+        active_threshold = assessment.recommended_threshold or 80
+        if assessment.action_required and assessment.risk_score >= active_threshold:
             tx_hash = execute_emergency_pause(assessment.reason, assessment.risk_score)
             if tx_hash:
                 response_data["tx_hash"] = tx_hash

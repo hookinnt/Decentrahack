@@ -75,6 +75,23 @@ def encode_emergency_pause_ix(risk_score: int, reason: str) -> bytes:
     return discriminator + arg_risk + arg_reason_len + reason_bytes
 
 
+def encode_update_threshold_ix(new_threshold: int) -> bytes:
+    """
+    Manually encode the Anchor instruction data for `update_threshold`.
+    
+    Layout:
+      - 8 bytes: Discriminator (sha256("global:update_threshold")[..8])
+      - 1 byte : new_threshold (u8)
+    """
+    # Discriminator: fb2418b39d1fefea
+    discriminator = bytes([0xfb, 0x24, 0x18, 0xb3, 0x9d, 0x1f, 0xef, 0xea])
+    
+    # Arg: new_threshold (u8)
+    arg_threshold = bytes([new_threshold & 0xFF])
+    
+    return discriminator + arg_threshold
+
+
 # ─── Keypair Management ───────────────────────────────────────────────────────
 
 def load_or_create_keypair() -> Keypair:
@@ -152,18 +169,36 @@ def verify_solana_or_crash():
 # ─── API Helpers ──────────────────────────────────────────────────────────────
 
 def get_status() -> dict:
-    """Health check for the frontend dashboard."""
+    """Fetch live blockchain and wallet health, including the on-chain risk threshold."""
     try:
         version_resp = solana_client.get_version()
         kp = load_or_create_keypair()
-        balance = solana_client.get_balance(kp.pubkey()).value
+        pubkey = kp.pubkey()
+        balance = solana_client.get_balance(pubkey).value
+        
+        # Default fallback threshold
+        risk_threshold = 80
+        
+        # Attempt to read active on-chain threshold from PDA
+        try:
+            treasury_pda = get_pda_treasury(pubkey)
+            account_info = solana_client.get_account_info(treasury_pda)
+            if account_info.value:
+                # TreasuryState offsets: 8 (disc) + 1 (paused) + 32 (auth) + 1 (bump) + 4 (count) + 1 (score) = 47
+                data = account_info.value.data
+                if len(data) >= 48:
+                    risk_threshold = int(data[47])
+        except:
+            pass
+
         return {
             "connected": True,
             "cluster": "devnet",
             "rpc_url": SOLANA_RPC_URL,
             "solana_version": version_resp.value.solana_core,
-            "agent_pubkey": str(kp.pubkey()),
+            "agent_pubkey": str(pubkey),
             "agent_balance_sol": round(balance / 1_000_000_000, 6),
+            "risk_threshold": risk_threshold,
         }
     except Exception as e:
         return {"connected": False, "error": str(e)}
@@ -224,4 +259,48 @@ def execute_emergency_pause(reason: str, risk_score: int) -> str | None:
 
     except Exception as e:
         print(f"{Fore.RED}[БЛОКЧЕЙН] Ошибка смарт-контракта: {e}")
+        return None
+
+
+def execute_threshold_update(new_threshold: int) -> str | None:
+    """
+    Updates the on-chain Risk Threshold (DARS feature).
+    Allows the AI Oracle to adjust the contract's sensitivity dynamically.
+    """
+    print(f"\n{Fore.YELLOW}[КОНФИГ] Обновление порога чувствительности до {new_threshold}/100...")
+    try:
+        kp = load_or_create_keypair()
+        authority = kp.pubkey()
+        
+        treasury_pda = get_pda_treasury(authority)
+
+        # Accounts match TriggerPause context used for update_threshold
+        accounts = [
+            AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
+            AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+        ]
+
+        data = encode_update_threshold_ix(new_threshold)
+
+        ix = Instruction(
+            program_id=RISK_MANAGER_PROGRAM_ID,
+            accounts=accounts,
+            data=data,
+        )
+
+        recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
+        msg = Message.new_with_blockhash([ix], authority, recent_blockhash)
+        tx = Transaction([kp], msg, recent_blockhash)
+
+        resp = solana_client.send_raw_transaction(
+            bytes(tx),
+            opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
+        )
+        signature = str(resp.value)
+
+        print(f"{Fore.GREEN}[КОНФИГ] ✓ Порог обновлен! Signature: {signature}")
+        return signature
+
+    except Exception as e:
+        print(f"{Fore.RED}[КОНФИГ] Ошибка обновления порога: {e}")
         return None
