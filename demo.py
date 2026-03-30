@@ -38,23 +38,36 @@ def run_demo():
             assessment = analyzer.analyze_news(news)
             
             # Цветовая логика для эффектной презентации
-            if assessment.risk_score >= 70:
+            if assessment.risk_score >= 80 and assessment.action_required:
                 color = Fore.RED
-                action_text = f"{Fore.RED}{Style.BRIGHT}[!!!] ИНИЦИИРУЮ ЗАЩИТУ: ОТПРАВКА ТРАНЗАКЦИИ (contractPause())"
+                action_text = f"{Fore.RED}{Style.BRIGHT}[!!!] ИНИЦИИРУЮ ЗАЩИТУ: ОТПРАВКА ТРАНЗАКЦИИ В СОЛАНУ"
+                print(f"{color}Оценка Риска: {assessment.risk_score} / 100")
+                print(f"{color}Размышления: {assessment.reason}")
+                print(action_text)
+                
+                # Реальный вызов блокчейна
+                from agent.solana_client import execute_emergency_pause
+                tx_hash = execute_emergency_pause(assessment.reason, assessment.risk_score)
+                if tx_hash:
+                    print(f"{Fore.GREEN}[SUCCESS] Solscan: https://solscan.io/tx/{tx_hash}?cluster=devnet")
+                else:
+                    print(f"{Fore.RED}[FAILED] Не удалось отправить транзакцию (недостаточно SOL?)")
+
             elif assessment.risk_score >= 40:
                 color = Fore.YELLOW
                 action_text = f"{Fore.YELLOW}[~] Режим ожидания. Статус: Наблюдение."
+                print(f"{color}Оценка Риска: {assessment.risk_score} / 100")
+                print(f"{color}Размышления: {assessment.reason}")
+                print(action_text)
             else:
                 color = Fore.GREEN
                 action_text = f"{Fore.GREEN}[✓] Рисков не обнаружено. Штатная работа."
-            
-            # Выводим логику ИИ
-            print(f"{color}Оценка Риска: {assessment.risk_score} / 100")
-            print(f"{color}Размышления: {assessment.reason}")
-            print(action_text)
-            
+                print(f"{color}Оценка Риска: {assessment.risk_score} / 100")
+                print(f"{color}Размышления: {assessment.reason}")
+                print(action_text)
+                
         except Exception as e:
-            print(f"{Fore.RED}[Ошибка] Не удалось получить ответ: {e}")
+            print(f"{Fore.RED}[Ошибка] Внутренний сбой: {e}")
             
         print("-" * 54 + "\n")
         time.sleep(2.5)

@@ -1,173 +1,652 @@
 <!DOCTYPE html>
-<html lang="ru">
+<html lang="en">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solana Risk Manager</title>
+    <title>Solana AI Risk Oracle</title>
+    <meta name="description" content="Autonomous AI agent that monitors DeFi threats and protects treasury assets on Solana in real time.">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     <style>
+        /* ── Design Tokens ─────────────────────────────────────── */
         :root {
-            --bg-color: #0b101e; --panel-bg: rgba(18, 26, 47, 0.9);
-            --border-color: rgba(255, 255, 255, 0.08);
-            --solana-green: #14F195; --solana-purple: #9945FF;
-            --text-main: #f8fafc; --text-muted: #94a3b8;
+            --bg:           #080c14;
+            --surface:      #0d1525;
+            --surface-2:    #111d33;
+            --border:       rgba(255,255,255,0.07);
+            --border-bright:rgba(255,255,255,0.14);
+            --sol-green:    #14F195;
+            --sol-purple:   #9945FF;
+            --sol-blue:     #00c2ff;
+            --warn:         #f59e0b;
+            --danger:       #ef4444;
+            --danger-dim:   rgba(239,68,68,0.12);
+            --warn-dim:     rgba(245,158,11,0.12);
+            --safe-dim:     rgba(20,241,149,0.10);
+            --text:         #e2e8f0;
+            --muted:        #64748b;
+            --mono:         'JetBrains Mono', monospace;
         }
+
+        /* ── Reset & Base ──────────────────────────────────────── */
+        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
         body {
-            background-color: var(--bg-color); color: var(--text-main);
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            margin: 0; padding: 2rem; display: flex; justify-content: center; min-height: 100vh;
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', system-ui, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            min-height: 100vh;
         }
 
-        .dashboard { width: 100%; max-width: 800px; }
+        /* ── Animated gradient top bar ─────────────────────────── */
+        .top-bar {
+            height: 3px;
+            background: linear-gradient(90deg, var(--sol-purple), var(--sol-green), var(--sol-blue), var(--sol-purple));
+            background-size: 300% 100%;
+            animation: gradientShift 4s linear infinite;
+        }
+        @keyframes gradientShift { to { background-position: 300% 0; } }
 
+        /* ── Application shell ─────────────────────────────────── */
+        .app {
+            display: grid;
+            grid-template-rows: auto 1fr;
+            min-height: calc(100vh - 3px);
+        }
+
+        /* ── Header ────────────────────────────────────────────── */
         .header {
-            margin-bottom: 2rem; border-bottom: 1px solid var(--border-color);
-            padding-bottom: 1rem; display: flex; justify-content: space-between; align-items: center;
-        }
-        .title { font-size: 1.25rem; font-weight: 500; letter-spacing: 0.5px; }
-
-        .status-badge { color: var(--solana-green); font-size: 0.8rem; display: flex; align-items: center; gap: 6px; }
-        .status-badge::before { content: ''; display: block; width: 8px; height: 8px; border-radius: 50%; background-color: var(--solana-green); }
-
-        .panel {
-            background-color: var(--panel-bg); border: 1px solid var(--border-color);
-            border-radius: 8px; padding: 1.5rem; margin-bottom: 1.5rem;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 1rem 2rem;
+            border-bottom: 1px solid var(--border);
+            background: var(--surface);
         }
 
-        .label {
-            display: block; text-transform: uppercase; font-size: 0.75rem;
-            font-weight: 600; color: var(--text-muted); margin-bottom: 0.75rem; letter-spacing: 0.05em;
+        .logo {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+        .logo-icon {
+            width: 32px; height: 32px;
+            background: linear-gradient(135deg, var(--sol-purple), var(--sol-green));
+            border-radius: 8px;
+            display: flex; align-items: center; justify-content: center;
+            font-size: 16px;
+        }
+        .logo-title { font-weight: 600; font-size: 0.95rem; }
+        .logo-sub { font-size: 0.75rem; color: var(--muted); }
+
+        /* ── Status badge ──────────────────────────────────────── */
+        #statusBadge {
+            display: flex; align-items: center; gap: 8px;
+            font-size: 0.78rem; font-weight: 500;
+            padding: 0.4rem 0.85rem;
+            border-radius: 99px;
+            border: 1px solid var(--border-bright);
+            background: var(--surface-2);
+            transition: all 0.4s ease;
+            cursor: default;
+        }
+        #statusBadge.connected { border-color: rgba(20,241,149,0.3); }
+        #statusBadge.disconnected { border-color: rgba(239,68,68,0.3); }
+
+        .dot {
+            width: 8px; height: 8px; border-radius: 50%;
+            background: var(--muted);
+            flex-shrink: 0;
+        }
+        .dot.pulse {
+            background: var(--sol-green);
+            box-shadow: 0 0 0 0 rgba(20,241,149,0.6);
+            animation: pulse 2s infinite;
+        }
+        .dot.error { background: var(--danger); }
+        @keyframes pulse {
+            0%   { box-shadow: 0 0 0 0 rgba(20,241,149,0.6); }
+            70%  { box-shadow: 0 0 0 7px rgba(20,241,149,0); }
+            100% { box-shadow: 0 0 0 0 rgba(20,241,149,0); }
+        }
+
+        /* ── Main layout ───────────────────────────────────────── */
+        .main {
+            display: grid;
+            grid-template-columns: 1fr 340px;
+            gap: 0;
+            height: 100%;
+        }
+
+        /* ── Left panel ────────────────────────────────────────── */
+        .left-panel {
+            padding: 2rem;
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            overflow-y: auto;
+        }
+
+        /* ── Right sidebar ─────────────────────────────────────── */
+        .sidebar {
+            display: flex;
+            flex-direction: column;
+            overflow-y: auto;
+        }
+        .sidebar-section {
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        /* ── Section labels ────────────────────────────────────── */
+        .section-label {
+            font-size: 0.7rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: var(--muted);
+            margin-bottom: 1rem;
+        }
+
+        /* ── Input card ────────────────────────────────────────── */
+        .card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 10px;
+            padding: 1.25rem;
         }
 
         textarea, input, select {
-            width: 100%; background: rgba(0, 0, 0, 0.2); border: 1px solid var(--border-color);
-            color: var(--text-main); border-radius: 6px; padding: 1rem;
-            font-family: inherit; font-size: 0.9rem; box-sizing: border-box; transition: border-color 0.2s;
+            width: 100%;
+            background: rgba(0,0,0,0.25);
+            border: 1px solid var(--border-bright);
+            color: var(--text);
+            border-radius: 7px;
+            padding: 0.85rem 1rem;
+            font-family: inherit;
+            font-size: 0.88rem;
+            transition: border-color 0.2s, box-shadow 0.2s;
         }
-        textarea { resize: vertical; min-height: 100px; }
-        textarea:focus, input:focus, select:focus { outline: none; border-color: var(--solana-purple); }
-        option { color: black; }
-
-        button {
-            background: #1e293b; color: white; border: 1px solid var(--border-color);
-            padding: 0.75rem 1.5rem; border-radius: 6px; font-weight: 500;
-            cursor: pointer; transition: all 0.2s; margin-top: 1rem; font-size: 0.9rem; width: 100%;
+        textarea { resize: vertical; min-height: 110px; line-height: 1.6; }
+        textarea:focus, input:focus, select:focus {
+            outline: none;
+            border-color: var(--sol-purple);
+            box-shadow: 0 0 0 3px rgba(153,69,255,0.12);
         }
-        button:hover { background: #334155; border-color: #475569; }
-        button:disabled { opacity: 0.5; cursor: not-allowed; }
+        option { color: #000; background: #fff; }
 
-        .results { display: none; }
-        .risk-meter { height: 6px; background: rgba(255,255,255,0.05); border-radius: 3px; margin: 1.5rem 0; overflow: hidden; }
-        .risk-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 1s cubic-bezier(0.4, 0, 0.2, 1); }
+        .input-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 1rem;
+        }
 
+        /* ── Analyze button ────────────────────────────────────── */
+        #analyzeBtn {
+            width: 100%;
+            margin-top: 1.25rem;
+            padding: 0.85rem 1.5rem;
+            background: linear-gradient(135deg, var(--sol-purple), #7b36d8);
+            color: #fff;
+            border: none;
+            border-radius: 8px;
+            font-family: inherit;
+            font-size: 0.9rem;
+            font-weight: 600;
+            cursor: pointer;
+            transition: opacity 0.2s, transform 0.15s;
+            display: flex; align-items: center; justify-content: center; gap: 8px;
+        }
+        #analyzeBtn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
+        #analyzeBtn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+
+        /* Spinner */
+        .spinner {
+            display: none;
+            width: 16px; height: 16px;
+            border: 2px solid rgba(255,255,255,0.3);
+            border-top-color: #fff;
+            border-radius: 50%;
+            animation: spin 0.7s linear infinite;
+        }
+        @keyframes spin { to { transform: rotate(360deg); } }
+
+        /* ── Results section ───────────────────────────────────── */
+        #resultsPanel {
+            display: none;
+            animation: fadeIn 0.4s ease;
+        }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+        .result-card {
+            border-radius: 10px;
+            padding: 1.25rem;
+            border: 1px solid var(--border);
+        }
+        .result-card.safe   { background: var(--safe-dim);  border-color: rgba(20,241,149,0.2); }
+        .result-card.warn   { background: var(--warn-dim);  border-color: rgba(245,158,11,0.25); }
+        .result-card.danger { background: var(--danger-dim);border-color: rgba(239,68,68,0.3); }
+
+        .score-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 1rem; }
+        .score-value { font-size: 3rem; font-weight: 300; line-height: 1; }
+        .score-total { font-size: 1rem; color: var(--muted); margin-left: 2px; }
+
+        #statusLabel {
+            font-size: 0.8rem;
+            font-weight: 700;
+            letter-spacing: 0.06em;
+            padding: 0.35rem 0.75rem;
+            border-radius: 6px;
+        }
+        .label-safe   { background: rgba(20,241,149,0.15); color: var(--sol-green); }
+        .label-warn   { background: rgba(245,158,11,0.15); color: var(--warn); }
+        .label-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
+
+        /* Risk meter */
+        .meter { height: 5px; background: rgba(255,255,255,0.07); border-radius: 3px; overflow: hidden; margin-bottom: 1rem; }
+        .meter-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 1.2s cubic-bezier(0.4,0,0.2,1); }
+
+        #reasonText { font-size: 0.88rem; line-height: 1.7; color: #cbd5e1; }
+
+        /* ── TX Log ────────────────────────────────────────────── */
+        #txLogWrap { display: none; margin-top: 1.25rem; }
         .tx-log {
-            font-family: Consolas, 'Liberation Mono', Menlo, monospace;
-            background: rgba(0,0,0,0.5); padding: 1rem; border-radius: 6px;
-            font-size: 0.8rem; color: #94a3b8; white-space: pre-wrap; border: 1px solid rgba(255,255,255,0.05);
+            font-family: var(--mono);
+            font-size: 0.75rem;
+            background: rgba(0,0,0,0.45);
+            border: 1px solid rgba(239,68,68,0.2);
+            border-radius: 8px;
+            padding: 1rem 1.2rem;
+            color: #94a3b8;
+            white-space: pre-wrap;
+            line-height: 1.8;
+        }
+        .tx-sig { color: var(--sol-green); text-decoration: none; }
+        .tx-sig:hover { text-decoration: underline; }
+
+        /* ── Sidebar: System info ──────────────────────────────── */
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            padding: 0.45rem 0;
+            border-bottom: 1px solid var(--border);
+            font-size: 0.8rem;
+        }
+        .info-row:last-child { border-bottom: none; }
+        .info-key { color: var(--muted); }
+        .info-val { font-family: var(--mono); font-size: 0.72rem; color: var(--text); max-width: 160px; overflow: hidden; text-overflow: ellipsis; text-align: right; }
+        .info-val.green { color: var(--sol-green); }
+
+        /* ── Sidebar: History ──────────────────────────────────── */
+        #historyList { display: flex; flex-direction: column; gap: 0.6rem; }
+
+        .history-item {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+            padding: 0.65rem 0.85rem;
+            border-radius: 8px;
+            background: var(--surface-2);
+            border: 1px solid var(--border);
+            cursor: default;
+            transition: border-color 0.2s;
+            animation: fadeIn 0.3s ease;
+        }
+        .history-item:hover { border-color: var(--border-bright); }
+
+        .h-score {
+            font-size: 1.1rem;
+            font-weight: 700;
+            min-width: 36px;
+            text-align: center;
+        }
+        .h-score.safe   { color: var(--sol-green); }
+        .h-score.warn   { color: var(--warn); }
+        .h-score.danger { color: var(--danger); }
+
+        .h-meta { flex: 1; overflow: hidden; }
+        .h-status { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; }
+        .h-status.safe   { color: var(--sol-green); }
+        .h-status.warn   { color: var(--warn); }
+        .h-status.danger { color: var(--danger); }
+        .h-reason { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+        .h-time { font-size: 0.68rem; color: var(--muted); flex-shrink: 0; }
+
+        .empty-history { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1.5rem 0; }
+
+        /* ── Footer agent info ─────────────────────────────────── */
+        .sidebar-footer {
+            padding: 1rem 1.5rem;
+            margin-top: auto;
+            border-top: 1px solid var(--border);
+        }
+        .agent-key {
+            font-family: var(--mono);
+            font-size: 0.68rem;
+            color: var(--muted);
+            word-break: break-all;
+            line-height: 1.6;
+        }
+
+        /* ── Responsive ────────────────────────────────────────── */
+        @media (max-width: 900px) {
+            .main { grid-template-columns: 1fr; }
+            .sidebar { border-top: 1px solid var(--border); }
+            .left-panel { padding: 1.25rem; }
         }
     </style>
 </head>
 <body>
-    <div class="dashboard">
-        <header class="header">
-            <div class="title">Oracle Risk Manager (Solana)</div>
-            <div class="status-badge">RPC Connected</div>
-        </header>
 
-        <div class="panel">
-            <label class="label">Поток данных (Ввод оракула)</label>
-            <textarea id="newsInput" placeholder="Опишите угрозу, аномалию или новость на Solana..."></textarea>
-            
-            <div style="display: flex; gap: 1rem; margin-top: 1.5rem;">
-                <div style="flex: 1;">
-                    <label class="label">TVL Протокола ($)</label>
-                    <input type="text" id="tvlInput" placeholder="Например: 50M">
-                </div>
-                <div style="flex: 1;">
-                    <label class="label">Волатильность (Рынок)</label>
-                    <select id="volatilityInput">
-                        <option value="Low">Низкая (Стабильно)</option>
-                        <option value="Medium" selected>Средняя (Норма)</option>
-                        <option value="High">Высокая (Паника)</option>
-                    </select>
-                </div>
-            </div>
+<div class="top-bar"></div>
 
-            <button id="analyzeBtn" onclick="analyzeText()">Мульти-Анализ ИИ</button>
-        </div>
-
-        <div class="panel results" id="resultsPanel">
-            <label class="label">Метрика Безопасности</label>
-            <div style="display: flex; justify-content: space-between; align-items: flex-end;">
-                <div style="font-size: 2.5rem; font-weight: 300;" id="riskScore">0<span style="font-size:1rem; color:var(--text-muted)">/100</span></div>
-                <div id="actionStatus" style="font-weight: 500; font-size: 0.9rem;">...</div>
-            </div>
-            
-            <div class="risk-meter"><div class="risk-fill" id="riskFill"></div></div>
-            <p id="reasonText" style="color: #cbd5e1; font-size: 0.9rem; line-height: 1.6;"></p>
-
-            <div id="txLogContainer" style="display: none; margin-top: 2rem;">
-                <label class="label">Выполнение Транзакции (Anchor CPI)</label>
-                <div class="tx-log" id="txLog"></div>
+<div class="app">
+    <!-- ── Header ─────────────────────────────────────────────── -->
+    <header class="header">
+        <div class="logo">
+            <div class="logo-icon">⚡</div>
+            <div>
+                <div class="logo-title">Solana AI Risk Oracle</div>
+                <div class="logo-sub">Emergency Treasury Protection · Devnet</div>
             </div>
         </div>
-    </div>
+        <div id="statusBadge">
+            <span class="dot" id="statusDot"></span>
+            <span id="statusText">Connecting...</span>
+        </div>
+    </header>
 
-    <script>
-        async function analyzeText() {
-            const input = document.getElementById('newsInput').value;
-            const tvl = document.getElementById('tvlInput').value || 'Неизвестно';
-            const volatility = document.getElementById('volatilityInput').value;
-            const btn = document.getElementById('analyzeBtn');
-            const resultsPanel = document.getElementById('resultsPanel');
-            
-            if (!input.trim()) return;
+    <!-- ── Main ───────────────────────────────────────────────── -->
+    <div class="main">
 
-            btn.disabled = true;
-            btn.innerText = "Идет сборка и анализ данных...";
-            resultsPanel.style.display = "none";
+        <!-- Left: input + results -->
+        <div class="left-panel">
 
-            try {
-                const response = await fetch('/api/analyze', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ news: input, tvl: tvl, volatility: volatility })
-                });
-                
-                if (!response.ok) throw new Error("Network response was not ok");
-                const data = await response.json();
-                if (data.error) throw new Error(data.error);
+            <!-- Input card -->
+            <div class="card">
+                <div class="section-label">Oracle Event Input</div>
+                <textarea
+                    id="newsInput"
+                    placeholder="Describe the on-chain event, news, or anomaly you want the AI to assess...&#10;&#10;Example: An unknown attacker exploited a reentrancy bug in the SolendMax pool and drained $50M USDC."
+                ></textarea>
 
-                document.getElementById('riskScore').innerHTML = `${data.risk_score}<span style="font-size:1rem; color:var(--text-muted)">/100</span>`;
-                document.getElementById('reasonText').innerText = data.reason;
-                
-                const riskFill = document.getElementById('riskFill');
-                riskFill.style.width = `${data.risk_score}%`;
+                <div class="input-row">
+                    <div>
+                        <div class="section-label" style="margin-bottom:0.5rem">Protocol TVL ($)</div>
+                        <input type="text" id="tvlInput" placeholder="e.g. 142M">
+                    </div>
+                    <div>
+                        <div class="section-label" style="margin-bottom:0.5rem">Market Volatility</div>
+                        <select id="volatilityInput">
+                            <option value="Low">Low — Stable</option>
+                            <option value="Medium" selected>Medium — Normal</option>
+                            <option value="High">High — Panic</option>
+                        </select>
+                    </div>
+                </div>
 
-                const actionStatus = document.getElementById('actionStatus');
-                const txLogContainer = document.getElementById('txLogContainer');
-                const txLog = document.getElementById('txLog');
+                <button id="analyzeBtn" onclick="runAnalysis()">
+                    <span class="spinner" id="spinner"></span>
+                    <span id="btnText">Run AI Risk Assessment</span>
+                </button>
+            </div>
 
-                if (data.risk_score >= 80) {
-                    riskFill.style.background = '#ef4444';
-                    actionStatus.innerText = 'КРИТИЧЕСКАЯ УГРОЗА';
-                    actionStatus.style.color = '#ef4444';
-                    txLogContainer.style.display = 'block';
-                    txLog.innerHTML = `[PROGRAM] solana_risk_manager (Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS)\n[INSTRUCTION] emergency_pause\n[SIGNERS] Oracle AI Key\n[STATUS] Success. Treasury is now frozen.`;
-                } else {
-                    riskFill.style.background = 'var(--solana-green)';
-                    actionStatus.innerText = 'ШТАТНЫЙ РЕЖИМ';
-                    actionStatus.style.color = 'var(--solana-green)';
-                    txLogContainer.style.display = 'none';
-                }
-                resultsPanel.style.display = "block";
-            } catch (err) {
-                alert("Ошибка соединения с модулем логики.");
-            } finally {
-                btn.disabled = false;
-                btn.innerText = "Мульти-Анализ ИИ";
+            <!-- Results -->
+            <div id="resultsPanel">
+                <div class="result-card" id="resultCard">
+                    <div class="score-row">
+                        <div class="score-value" id="scoreValue">
+                            0<span class="score-total">/100</span>
+                        </div>
+                        <span id="statusLabel" class="label-safe">SAFE</span>
+                    </div>
+
+                    <div class="meter">
+                        <div class="meter-fill" id="meterFill"></div>
+                    </div>
+
+                    <p id="reasonText"></p>
+
+                    <!-- On-chain transaction log -->
+                    <div id="txLogWrap">
+                        <div class="section-label" style="margin-top:1rem">On-Chain Event Log (Memo Program)</div>
+                        <div class="tx-log" id="txLog"></div>
+                    </div>
+                </div>
+            </div>
+
+        </div><!-- /left-panel -->
+
+        <!-- Right: sidebar -->
+        <div class="sidebar">
+
+            <!-- System status info -->
+            <div class="sidebar-section">
+                <div class="section-label">System Status</div>
+                <div id="infoPanel">
+                    <div class="info-row"><span class="info-key">Network</span><span class="info-val" id="infoCluster">—</span></div>
+                    <div class="info-row"><span class="info-key">Solana Version</span><span class="info-val" id="infoVersion">—</span></div>
+                    <div class="info-row"><span class="info-key">Agent Balance</span><span class="info-val green" id="infoBalance">—</span></div>
+                    <div class="info-row"><span class="info-key">RPC</span><span class="info-val" id="infoRpc">—</span></div>
+                </div>
+            </div>
+
+            <!-- Assessment history -->
+            <div class="sidebar-section" style="flex:1">
+                <div class="section-label">Recent Assessments</div>
+                <div id="historyList">
+                    <div class="empty-history">No analyses yet.<br>Submit an event to begin.</div>
+                </div>
+            </div>
+
+            <!-- Agent pubkey footer -->
+            <div class="sidebar-footer">
+                <div class="section-label" style="margin-bottom:0.4rem">Agent Pubkey</div>
+                <div class="agent-key" id="agentPubkey">Loading...</div>
+            </div>
+
+        </div><!-- /sidebar -->
+
+    </div><!-- /main -->
+</div><!-- /app -->
+
+<script>
+    // ── State ───────────────────────────────────────────────────
+    const history = [];
+
+    // ── Helpers ─────────────────────────────────────────────────
+    function scoreClass(score) {
+        if (score >= 80) return 'danger';
+        if (score >= 40) return 'warn';
+        return 'safe';
+    }
+
+    function scoreLabel(score) {
+        if (score >= 80) return 'CRITICAL THREAT';
+        if (score >= 40) return 'ELEVATED RISK';
+        return 'NORMAL OPERATIONS';
+    }
+
+    function meterColor(score) {
+        if (score >= 80) return '#ef4444';
+        if (score >= 40) return '#f59e0b';
+        return '#14F195';
+    }
+
+    function nowTime() {
+        return new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
+    }
+
+    // ── Status badge ─────────────────────────────────────────────
+    async function loadStatus() {
+        const badge = document.getElementById('statusBadge');
+        const dot   = document.getElementById('statusDot');
+        const text  = document.getElementById('statusText');
+
+        try {
+            const res  = await fetch('/api/status');
+            const data = await res.json();
+
+            if (data.connected) {
+                badge.className = 'connected';
+                dot.className   = 'dot pulse';
+                text.textContent = `Connected · Devnet`;
+
+                document.getElementById('infoCluster').textContent  = data.cluster || 'devnet';
+                document.getElementById('infoVersion').textContent  = data.solana_version || '—';
+                document.getElementById('infoBalance').textContent  = data.agent_balance_sol + ' SOL';
+                document.getElementById('infoRpc').textContent      = 'api.devnet.solana.com';
+                document.getElementById('agentPubkey').textContent  = data.agent_pubkey || '—';
+            } else {
+                throw new Error(data.error || 'Disconnected');
             }
+        } catch (err) {
+            badge.className = 'disconnected';
+            dot.className   = 'dot error';
+            text.textContent = 'RPC Error';
+            document.getElementById('agentPubkey').textContent = 'Cannot reach Solana Devnet';
         }
-    </script>
+    }
+
+    // ── History panel ─────────────────────────────────────────────
+    function addHistory(score, reason) {
+        const cls     = scoreClass(score);
+        const label   = scoreLabel(score);
+        const snippet = reason.length > 52 ? reason.slice(0, 52) + '…' : reason;
+        const time    = nowTime();
+
+        history.unshift({ score, cls, label, snippet, time });
+        if (history.length > 8) history.pop();
+
+        const container = document.getElementById('historyList');
+        container.innerHTML = history.map(h => `
+            <div class="history-item">
+                <div class="h-score ${h.cls}">${h.score}</div>
+                <div class="h-meta">
+                    <div class="h-status ${h.cls}">${h.label}</div>
+                    <div class="h-reason">${h.snippet}</div>
+                </div>
+                <div class="h-time">${h.time}</div>
+            </div>
+        `).join('');
+    }
+
+    // ── Main analysis ─────────────────────────────────────────────
+    async function runAnalysis() {
+        const input      = document.getElementById('newsInput').value.trim();
+        const tvl        = document.getElementById('tvlInput').value.trim() || 'Unknown';
+        const volatility = document.getElementById('volatilityInput').value;
+        const btn        = document.getElementById('analyzeBtn');
+        const spinner    = document.getElementById('spinner');
+        const btnText    = document.getElementById('btnText');
+        const results    = document.getElementById('resultsPanel');
+
+        if (!input) {
+            document.getElementById('newsInput').focus();
+            return;
+        }
+
+        // Loading state
+        btn.disabled          = true;
+        spinner.style.display = 'block';
+        btnText.textContent   = 'Analyzing…';
+        results.style.display = 'none';
+
+        try {
+            const res = await fetch('/api/analyze', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ news: input, tvl, volatility }),
+            });
+
+            if (!res.ok) throw new Error(`Server error ${res.status}`);
+            const data = await res.json();
+            if (data.error) throw new Error(data.error);
+
+            // ── Render results ────────────────────────────────────
+            const cls   = scoreClass(data.risk_score);
+            const label = scoreLabel(data.risk_score);
+
+            // Result card theme
+            const card = document.getElementById('resultCard');
+            card.className = `result-card ${cls}`;
+
+            // Score
+            document.getElementById('scoreValue').innerHTML =
+                `${data.risk_score}<span class="score-total">/100</span>`;
+
+            // Status label
+            const labelEl = document.getElementById('statusLabel');
+            labelEl.textContent = label;
+            labelEl.className   = `label-${cls}`;
+
+            // Meter
+            const fill = document.getElementById('meterFill');
+            fill.style.width      = `${data.risk_score}%`;
+            fill.style.background = meterColor(data.risk_score);
+
+            // Reason
+            document.getElementById('reasonText').textContent = data.reason;
+
+            // TX log
+            const txWrap = document.getElementById('txLogWrap');
+            const txLog  = document.getElementById('txLog');
+
+            if (data.risk_score >= 80) {
+                txWrap.style.display = 'block';
+
+                if (data.tx_hash) {
+                    const solscanUrl = `https://solscan.io/tx/${data.tx_hash}?cluster=devnet`;
+                    txLog.innerHTML =
+`Program   : MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr (SPL Memo)
+Action    : EMERGENCY_PAUSE event logged on-chain
+Signer    : AI Oracle Agent Keypair
+Network   : Solana Devnet
+Status    : ✓ CONFIRMED
+
+Signature : <a href="${solscanUrl}" target="_blank" class="tx-sig">${data.tx_hash}</a>
+Solscan   : <a href="${solscanUrl}" target="_blank" class="tx-sig">View on Explorer ↗</a>`;
+                } else {
+                    txLog.textContent =
+`Program   : MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr (SPL Memo)
+Status    : FAILED — Check backend logs (insufficient SOL or RPC error)`;
+                }
+            } else {
+                txWrap.style.display = 'none';
+            }
+
+            // Show results
+            results.style.display = 'block';
+
+            // Update history
+            addHistory(data.risk_score, data.reason);
+
+        } catch (err) {
+            alert('Analysis error: ' + err.message);
+        } finally {
+            btn.disabled          = false;
+            spinner.style.display = 'none';
+            btnText.textContent   = 'Run AI Risk Assessment';
+        }
+    }
+
+    // ── Keyboard shortcut: Ctrl+Enter ─────────────────────────────
+    document.addEventListener('keydown', (e) => {
+        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runAnalysis();
+    });
+
+    // ── Boot ──────────────────────────────────────────────────────
+    loadStatus();
+    // refresh status every 30 seconds
+    setInterval(loadStatus, 30_000);
+</script>
+
 </body>
 </html>
