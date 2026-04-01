@@ -10,6 +10,7 @@ from agent.models import NewsItem
 from agent.monitor import BackgroundMonitor
 from agent.solana_client import (
     verify_solana_or_crash, 
+    execute_initialize,
     execute_emergency_pause, 
     execute_threshold_update,
     execute_resume,
