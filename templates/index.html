@@ -164,12 +164,14 @@
         /* ── Mobile Logic ────────────────────────────────────────── */
         .actions { display: grid; gap: 12px; margin-top: 24px; }
         .btn {
-            border: none; border-radius: 18px; padding: 20px;
+            border: none; border-radius: 18px; padding: 18px;
             font-family: inherit; font-weight: 700; font-size: 14px;
             text-transform: uppercase; letter-spacing: 0.1em;
             cursor: pointer; transition: var(--transition);
             display: flex; align-items: center; justify-content: center; gap: 8px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
         }
+        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
         .btn-primary { background: var(--text-main); color: var(--bg); }
         .btn-secondary { background: var(--surface-alt); color: var(--text-main); border: 1px solid var(--border); }
         .btn:active { transform: scale(0.96); }
