@@ -4,12 +4,15 @@ import warnings
 warnings.filterwarnings('ignore')
 
 from flask import Flask, request, jsonify, render_template
+from flask_socketio import SocketIO, emit
 from agent.analyzer import AIAnalyzer
 from agent.models import NewsItem
+from agent.monitor import BackgroundMonitor
 from agent.solana_client import (
     verify_solana_or_crash, 
     execute_emergency_pause, 
     execute_threshold_update,
+    execute_resume,
     get_status
 )
 
@@ -18,6 +21,8 @@ log = logging.getLogger('werkzeug')
 log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
+app.config['SECRET_KEY'] = 'secret!'
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # ─── Startup: Solana is required ──────────────────────────────────────────────
 verify_solana_or_crash()
@@ -25,6 +30,13 @@ verify_solana_or_crash()
 # One shared AI analyzer instance
 analyzer = AIAnalyzer()
 
+# Initialize and start the Autonomous Background Monitor ('Organism')
+def on_monitor_update(state):
+    """Callback for real-time state broadcast."""
+    socketio.emit('state_update', state)
+
+monitor = BackgroundMonitor(analyzer, callback=on_monitor_update)
+monitor.start()
 
 # ─── Routes ───────────────────────────────────────────────────────────────────
 
@@ -35,23 +47,19 @@ def index():
 
 @app.route('/api/status')
 def api_status():
-    """
-    Live health check — returns real Solana RPC connectivity data and
-    the AI agent wallet address + balance. Used by the frontend status badge.
-    """
+    """Live health check — returns Solana RPC data and agent balance."""
     return jsonify(get_status())
+
+
+@app.route('/api/monitor/state')
+def api_monitor_state():
+    """Returns the current state of the Background Monitor Organism."""
+    return jsonify(monitor.get_state())
 
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
-    """
-    Core analysis endpoint.
-    Accepts: { news: str, tvl: str, volatility: str }
-    Returns: { risk_score: int, reason: str, action_required: bool, tx_hash?: str }
-
-    If risk_score >= 80 and action_required is True, a real signed transaction
-    is sent to Solana Devnet as an immutable on-chain event log.
-    """
+    """Manually triggered analysis endpoint."""
     data = request.json
     if not data:
         return jsonify({"error": "No JSON body received"}), 400
@@ -65,7 +73,7 @@ def analyze():
 
     news = NewsItem(
         id="live",
-        headline="Oracle Input",
+        headline="Manual Oracle Input",
         content=text,
         tvl=tvl,
         volatility=volatility,
@@ -74,26 +82,19 @@ def analyze():
     try:
         assessment = analyzer.analyze_news(news)
 
-        response_data = {
-            "risk_score": assessment.risk_score,
-            "reason": assessment.reason,
-            "action_required": assessment.action_required,
-            "recommended_threshold": assessment.recommended_threshold
-        }
+        response_data = assessment.dict()
 
         # DARS logic: Autonomous threshold adjustment
         if assessment.recommended_threshold:
-            # Fetch current status to check if adjustment is needed
             status = get_status()
             current_threshold = status.get("risk_threshold", 80)
-            
-            # Significant change (>= 5 points) triggers a configuration update on-chain
             if abs(assessment.recommended_threshold - current_threshold) >= 5:
+                # This could be potentially slow if waiting for confirmation, 
+                # but it's okay for this manual trigger.
                 execute_threshold_update(assessment.recommended_threshold)
                 response_data["threshold_updated"] = True
 
-        # Send a real blockchain transaction if the AI flags a critical threat
-        # Threshold is now dynamic based on AI recommendation or on-chain state
+        # Send emergency transaction if risk is high
         active_threshold = assessment.recommended_threshold or 80
         if assessment.action_required and assessment.risk_score >= active_threshold:
             tx_hash = execute_emergency_pause(assessment.reason, assessment.risk_score)
@@ -106,11 +107,26 @@ def analyze():
         return jsonify({"error": str(e)}), 500
 
 
+@app.route('/api/initialize', methods=['POST'])
+def api_initialize():
+    """Manual on-chain initialization."""
+    sig = execute_initialize()
+    return jsonify({"signature": sig})
+
+
+@app.route('/api/resume', methods=['POST'])
+def api_resume():
+    """Manual on-chain resume."""
+    sig = execute_resume()
+    return jsonify({"signature": sig})
+
+
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     print("\n" + "=" * 56)
-    print("   Solana AI Risk Oracle — Web Dashboard")
+    print("   SOLANA AI RISK ORGANISM — Dashboard")
+    print("   Status: Background Monitoring ACTIVE (WebSockets ENABLED)")
     print("=" * 56)
     print("=> http://127.0.0.1:5000\n")
-    app.run(port=5000, debug=False)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)

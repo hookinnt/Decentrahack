@@ -49,47 +49,74 @@ def get_pda_treasury(authority: Pubkey) -> Pubkey:
     return pda
 
 
+def encode_initialize_ix() -> bytes:
+    """
+    Discriminator: af345b5a1b7ad4f4 (sha256("global:initialize"))
+    """
+    return bytes([0xaf, 0x34, 0x5b, 0x5a, 0x1b, 0x7a, 0xd4, 0xf4])
+
+
 def encode_emergency_pause_ix(risk_score: int, reason: str) -> bytes:
     """
-    Manually encode the Anchor instruction data for `emergency_pause`.
-    
-    Anchor uses a unique 8-byte discriminator for each instruction, 
-    followed by BORSCH-serialized arguments.
-    
-    Layout:
-      - 8 bytes: Discriminator (sha256("global:emergency_pause")[..8])
-      - 1 byte : risk_score (u8)
-      - 4 bytes: reason length (u32, little-endian)
-      - N bytes: reason (UTF-8 bytes)
+    Discriminator: 158f1b8ec8b5d2ff
     """
-    # Discriminator: 158f1b8ec8b5d2ff
     discriminator = bytes([0x15, 0x8f, 0x1b, 0x8e, 0xc8, 0xb5, 0xd2, 0xff])
-    
-    # Arg 1: risk_score (u8)
     arg_risk = bytes([risk_score & 0xFF])
-    
-    # Arg 2: reason (String)
     reason_bytes = reason.encode("utf-8")
     arg_reason_len = len(reason_bytes).to_bytes(4, "little")
-    
     return discriminator + arg_risk + arg_reason_len + reason_bytes
+
+
+def encode_resume_ix() -> bytes:
+    """
+    Discriminator: 05c088863f69eb44 (sha256("global:resume"))
+    """
+    return bytes([0x05, 0xc0, 0x88, 0x86, 0x3f, 0x69, 0xeb, 0x44])
 
 
 def encode_update_threshold_ix(new_threshold: int) -> bytes:
     """
-    Manually encode the Anchor instruction data for `update_threshold`.
-    
-    Layout:
-      - 8 bytes: Discriminator (sha256("global:update_threshold")[..8])
-      - 1 byte : new_threshold (u8)
+    Discriminator: fb2418b39d1fefea
     """
-    # Discriminator: fb2418b39d1fefea
     discriminator = bytes([0xfb, 0x24, 0x18, 0xb3, 0x9d, 0x1f, 0xef, 0xea])
-    
-    # Arg: new_threshold (u8)
     arg_threshold = bytes([new_threshold & 0xFF])
-    
     return discriminator + arg_threshold
+
+
+# ─── BORSCH Data Decoding ─────────────────────────────────────────────────────
+
+def decode_treasury_state(data: bytes) -> dict:
+    """
+    Decodes the 48-byte TreasuryState structure from Solana memory.
+    Format: 
+      - discriminator: 8 
+      - is_paused    : 1 (bool)
+      - authority     : 32 (pubkey)
+      - bump         : 1 (u8)
+      - pause_count  : 4 (u32, LE)
+      - risk_score   : 1 (u8)
+      - threshold    : 1 (u8)
+      - last_updated : 8 (i64, LE)
+    """
+    import struct
+    if len(data) < 48: return {}
+    
+    # Simple manual BORSCH parsing
+    is_paused = bool(data[8])
+    authority = Pubkey.from_bytes(data[9:41])
+    bump = data[41]
+    pause_count = struct.unpack("<I", data[42:46])[0]
+    risk_score = data[46]
+    threshold = data[47]
+    # last_updated = struct.unpack("<q", data[48:56])[0] # Offset 48+8
+    
+    return {
+        "is_paused": is_paused,
+        "authority": str(authority),
+        "pause_count": pause_count,
+        "last_risk_score": risk_score,
+        "risk_threshold": threshold
+    }
 
 
 # ─── Keypair Management ───────────────────────────────────────────────────────
@@ -157,6 +184,12 @@ def verify_solana_or_crash():
 
         kp = load_or_create_keypair()
         check_and_fund_wallet(kp)
+        
+        # Check if Treasury is initialized
+        status = get_status()
+        if status.get("account_missing"):
+            print(f"{Fore.YELLOW}[КРИТИЧНО] Контракт казначейства не инициализирован.")
+            execute_initialize()
 
     except Exception as e:
         print(f"\n{Fore.RED}{Style.BRIGHT}{'=' * 56}")
@@ -176,20 +209,25 @@ def get_status() -> dict:
         pubkey = kp.pubkey()
         balance = solana_client.get_balance(pubkey).value
         
-        # Default fallback threshold
-        risk_threshold = 80
+        # Default state
+        state = {
+            "is_paused": False,
+            "risk_threshold": 80,
+            "pause_count": 0,
+            "last_risk_score": 0
+        }
+        account_missing = False
         
         # Attempt to read active on-chain threshold from PDA
         try:
             treasury_pda = get_pda_treasury(pubkey)
             account_info = solana_client.get_account_info(treasury_pda)
             if account_info.value:
-                # TreasuryState offsets: 8 (disc) + 1 (paused) + 32 (auth) + 1 (bump) + 4 (count) + 1 (score) = 47
-                data = account_info.value.data
-                if len(data) >= 48:
-                    risk_threshold = int(data[47])
+                state = decode_treasury_state(account_info.value.data)
+            else:
+                account_missing = True
         except:
-            pass
+            account_missing = True
 
         return {
             "connected": True,
@@ -198,7 +236,11 @@ def get_status() -> dict:
             "solana_version": version_resp.value.solana_core,
             "agent_pubkey": str(pubkey),
             "agent_balance_sol": round(balance / 1_000_000_000, 6),
-            "risk_threshold": risk_threshold,
+            "is_paused": state.get("is_paused"),
+            "risk_threshold": state.get("risk_threshold"),
+            "pause_count": state.get("pause_count"),
+            "last_risk_score": state.get("last_risk_score"),
+            "account_missing": account_missing
         }
     except Exception as e:
         return {"connected": False, "error": str(e)}
@@ -206,101 +248,92 @@ def get_status() -> dict:
 
 # ─── Core On-Chain Logic ──────────────────────────────────────────────────────
 
-def execute_emergency_pause(reason: str, risk_score: int) -> str | None:
-    """
-    Executes a direct Anchor instruction call to trigger the Treasury Pause.
-    
-    This is the "REAL" autonomous bridge:
-    AI Result -> Binary Instruction -> On-Chain State Change
-    """
-    print(f"\n{Fore.RED}{Style.BRIGHT}[БЛОКЧЕЙН] Инициация вызова смарт-контракта (Anchor)...")
+def _send_tx(instruction: Instruction, signer: Keypair) -> str | None:
+    """Helper to sign and send transactions."""
     try:
-        kp = load_or_create_keypair()
-        authority = kp.pubkey()
-        
-        # 1. Derive PDA accurately for the instruction context
-        treasury_pda = get_pda_treasury(authority)
-        print(f"{Fore.CYAN}[БЛОКЧЕЙН] Treasury PDA: {treasury_pda}")
-
-        # 2. Map accounts to the `TriggerPause` context defined in lib.rs
-        accounts = [
-            AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
-        ]
-
-        # 3. Binary encode the Anchor instruction
-        data = encode_emergency_pause_ix(risk_score, reason)
-
-        # 4. Construct Instruction
-        ix = Instruction(
-            program_id=RISK_MANAGER_PROGRAM_ID,
-            accounts=accounts,
-            data=data,
-        )
-
-        # 5. Build and Sign Transaction
         recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
-        msg = Message.new_with_blockhash([ix], authority, recent_blockhash)
-        tx = Transaction([kp], msg, recent_blockhash)
-
-        print(f"{Fore.CYAN}[БЛОКЧЕЙН] Отправка сформированной транзакции...")
+        msg = Message.new_with_blockhash([instruction], signer.pubkey(), recent_blockhash)
+        tx = Transaction([signer], msg, recent_blockhash)
 
         resp = solana_client.send_raw_transaction(
             bytes(tx),
             opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
         )
-        signature = str(resp.value)
-
-        print(f"{Fore.GREEN}[БЛОКЧЕЙН] ✓ Транзакция подтверждена!")
-        print(f"{Fore.GREEN}  Signature : {signature}")
-        print(f"{Fore.CYAN}  Solscan   : https://solscan.io/tx/{signature}?cluster=devnet")
-
-        return signature
-
+        return str(resp.value)
     except Exception as e:
-        print(f"{Fore.RED}[БЛОКЧЕЙН] Ошибка смарт-контракта: {e}")
+        print(f"{Fore.RED}[BLOCKCHAIN ERROR] {e}")
         return None
+
+
+def execute_initialize() -> str | None:
+    """Creates the Treasury PDA on Solana."""
+    print(f"{Fore.CYAN}[БЛОКЧЕЙН] Инициализация аккаунта казначейства...")
+    kp = load_or_create_keypair()
+    authority = kp.pubkey()
+    treasury_pda = get_pda_treasury(authority)
+    
+    # Accounts follow lib.rs's Initialize context
+    accounts = [
+        AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
+        AccountMeta(pubkey=authority, is_signer=True, is_writable=True),
+        AccountMeta(pubkey=Pubkey.from_string("11111111111111111111111111111111"), is_signer=False, is_writable=False), # System Program
+    ]
+    
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_initialize_ix())
+    sig = _send_tx(ix, kp)
+    if sig: print(f"{Fore.GREEN}[OK] Казначейство создано. Sig: {sig}")
+    return sig
+
+
+def execute_emergency_pause(reason: str, risk_score: int) -> str | None:
+    """Triggers the safe lock on-chain."""
+    print(f"\n{Fore.RED}{Style.BRIGHT}[БЛОКЧЕЙН] КРИТИЧЕСКИЙ ВЫЗОВ: Emergency Pause!")
+    kp = load_or_create_keypair()
+    authority = kp.pubkey()
+    treasury_pda = get_pda_treasury(authority)
+
+    accounts = [
+        AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
+        AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+    ]
+
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_emergency_pause_ix(risk_score, reason))
+    sig = _send_tx(ix, kp)
+    if sig: print(f"{Fore.GREEN}[OK] Казначейство ЗАБЛОКИРОВАНО. Sig: {sig}")
+    return sig
+
+
+def execute_resume() -> str | None:
+    """Unlocks the treasury on-chain."""
+    print(f"{Fore.GREEN}[БЛОКЧЕЙН] Восстановление системы: Resume...")
+    kp = load_or_create_keypair()
+    authority = kp.pubkey()
+    treasury_pda = get_pda_treasury(authority)
+
+    accounts = [
+        AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
+        AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+    ]
+
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_resume_ix())
+    sig = _send_tx(ix, kp)
+    if sig: print(f"{Fore.GREEN}[OK] Казначейство РАЗБЛОКИРОВАНО. Sig: {sig}")
+    return sig
 
 
 def execute_threshold_update(new_threshold: int) -> str | None:
-    """
-    Updates the on-chain Risk Threshold (DARS feature).
-    Allows the AI Oracle to adjust the contract's sensitivity dynamically.
-    """
-    print(f"\n{Fore.YELLOW}[КОНФИГ] Обновление порога чувствительности до {new_threshold}/100...")
-    try:
-        kp = load_or_create_keypair()
-        authority = kp.pubkey()
-        
-        treasury_pda = get_pda_treasury(authority)
+    """Updates dynamic risk sensitivity (DARS)."""
+    print(f"\n{Fore.YELLOW}[КОНФИГ] DARS: Изменение порога на {new_threshold}/100...")
+    kp = load_or_create_keypair()
+    authority = kp.pubkey()
+    treasury_pda = get_pda_treasury(authority)
 
-        # Accounts match TriggerPause context used for update_threshold
-        accounts = [
-            AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
-            AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
-        ]
+    accounts = [
+        AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
+        AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+    ]
 
-        data = encode_update_threshold_ix(new_threshold)
-
-        ix = Instruction(
-            program_id=RISK_MANAGER_PROGRAM_ID,
-            accounts=accounts,
-            data=data,
-        )
-
-        recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
-        msg = Message.new_with_blockhash([ix], authority, recent_blockhash)
-        tx = Transaction([kp], msg, recent_blockhash)
-
-        resp = solana_client.send_raw_transaction(
-            bytes(tx),
-            opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
-        )
-        signature = str(resp.value)
-
-        print(f"{Fore.GREEN}[КОНФИГ] ✓ Порог обновлен! Signature: {signature}")
-        return signature
-
-    except Exception as e:
-        print(f"{Fore.RED}[КОНФИГ] Ошибка обновления порога: {e}")
-        return None
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_update_threshold_ix(new_threshold))
+    sig = _send_tx(ix, kp)
+    if sig: print(f"{Fore.GREEN}[OK] Порог обновлен. Sig: {sig}")
+    return sig

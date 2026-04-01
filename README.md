@@ -1,116 +1,105 @@
-# ⚡ Solana AI Risk Oracle — Case 2: Autonomous Smart Contracts
+# 🏛️ Solana AI Risk Oracle — Phase 7: Autonomous Organism
 
-> **Autonomous security layer that bridges AI decision-making with on-chain execution on Solana.**
+> **A professional-grade, autonomous security layer specifically engineered to protect Solana protocols from exploits, market shocks, and social engineering via on-chain AI intervention.**
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
 [![Network: Devnet](https://img.shields.io/badge/Network-Devnet-14F195.svg)](https://solscan.io/?cluster=devnet)
-[![AI: Gemini 2.5](https://img.shields.io/badge/AI-Gemini_2.5_Flash-00c2ff.svg)](https://deepmind.google/technologies/gemini/)
+[![AI Architecture: Gemini 2.5](https://img.shields.io/badge/AI-Gemini_2.5_Flash-00c2ff.svg)](https://deepmind.google/technologies/gemini/)
+[![Dashboard: PWA Ready](https://img.shields.io/badge/Dashboard-PWA_Responsive-white.svg)](#-mobile-installation)
 
 ---
 
-## 🌊 Context & Problem
+## 🌊 The "Autonomous Organism" Concept
+Unlike static security scripts, the **AI Risk Organism (v1.5)** acts as a living immune system for the treasury. It doesn't just alert; it **observes, interprets, and intervenes** in real-time, executing defense transactions on the Solana blockchain faster than any human operator.
 
-Static smart contracts are rigid. They cannot adapt to off-chain news, sudden market volatility, or emerging social signals. When a protocol is exploited, the damage usually happens in minutes — too fast for human governance to react.
-
-**Our Solution**: An autonomous AI Risk Oracle that monitors live event streams, assesses protocol-specific risk using multiple metrics (TVL, Volatility, Sentiment), and **self-executes** protective on-chain actions to freeze assets before the exploit completes.
-
----
-
-## 🚀 Key Features (Hackathon Case 2 Alignment)
-
-- **Autonomous Decision-Making**: The AI (Gemini 2.5 Flash) isn't just recommending; it **signs and broadcasts** transactions when the risk score exceeds 80/100.
-- **On-Chain Transparency**: Every decision is stored as a binary payload in the `TreasuryState` PDA and is publicly verifiable via **Anchor Events**.
-- **Security-First Architecture**: 
-  - **PDA Seeds**: Treasury accounts are cryptographically derived from `["treasury", authority]`.
-  - **Authority Constraints**: Only the authorized AI Oracle agent can trigger or lift the pause.
-  - **Audit Logs**: Every pause event includes a timestamp, risk score, and the AI's reasoning.
+### 🏛️ Gov-Grade Key Features
+- **DARS (Dynamic Autonomous Risk Sensitivity)**: The AI automatically updates the on-chain contract's risk threshold in response to market volatility.
+- **Autonomous Recovery**: If the network environment stabilizes for 5+ minutes, the Organism automatically calls `resume` to unlock liquidity.
+- **BORSCH State Decoding**: Direct binary parsing of the 48-byte `TreasuryState` PDA ensures the dashboard displays the **ground truth** from the blockchain.
+- **Real-Time Synchronization**: Powered by `SocketIO`, the system broadcasts every "thought" and "action" instantly to the Master Dashboard and Mobile App.
 
 ---
 
-## 🏗 System Architecture
+## 🏗 System Architecture (WebSockets & On-Chain Sync)
 
 ```mermaid
 graph TD
-    A[Event Input / Security Alerts] --> B[Gemini 2.5 Flash AI Engine]
-    B --> C{Risk Assessment}
-    C -- Score < 80 --> D[Log Monitoring Mode]
-    C -- Score >= 80 --> E[Autonomous Agent Signer]
-    E --> F[Solana Devnet Transaction]
-    F --> G[Anchor Smart Contract]
-    G --> H[EmergencyPauseEvent Emitted]
-    G --> I[Treasury State Updated: is_paused = true]
-    I --> J[Protected Protocol Assets Frozen]
+    A["Market News & SOL Price"] --> B["AI Risk Organism (Gemini)"]
+    B --> C{"Risk Audit"}
+    C -- "Risk > Threshold" --> D["On-Chain Emergency Pause"]
+    C -- "Volatile Market" --> E["DARS: Update On-Chain Threshold"]
+    C -- "Safe Streak (5m)" --> F["Autonomous Recovery (Resume)"]
+    
+    D --> G["Anchor Smart Contract"]
+    E --> G
+    F --> G
+    
+    G -- "State Update" --> H["BORSCH Decoder (agent)"]
+    H --> I["SocketIO Broadcast"]
+    I --> J["Master Dashboard / Mobile App"]
 ```
+
+---
+
+## 📱 Mobile Installation (PWA)
+This project is engineered to work as a real phone application for government/institutional protocol managers.
+
+1. **Access**: Open the dashboard URL in Chrome (Android) or Safari (iOS).
+2. **Install**: Select **"Add to Home Screen"**.
+3. **Launch**: Use it as a full-screen, native-like experience with persistent sessions and real-time alerts.
 
 ---
 
 ## 🛠 Tech Stack
-
-| Component         | Technology                          |
-|-------------------|-------------------------------------|
-| **Blockchain**    | Solana / Anchor (Rust)              |
-| **AI Model**      | Google Gemini 2.5 Flash             |
-| **Logic Layer**   | Python 3.10 / Solana SDK (solders)   |
-| **Dashboard**     | HTML5 / CSS3 / Vanilla JS           |
-| **Communication** | Flask API (Autonomous Bridge)       |
+| Tier | Technology |
+|---|---|
+| **Blockchain** | Solana / Anchor (Rust) |
+| **BORSCH Decoder** | Python `solders` & `struct` |
+| **Logic Layer** | Python 3.10 / Eventlet |
+| **Real-Time** | Flask-SocketIO (WebSockets) |
+| **Mobile** | Responsive HTML5 / PWA / Canvas |
 
 ---
 
-## 📁 Project Structure
-
+## 📁 Project Structure (Cleaned for Production)
 ```bash
-├── contracts/
-│   └── solana_risk_manager/      # [RUST] Anchor Program
-│       └── programs/.../lib.rs   # Core logic: Initialize, Pause, Resume, Events
-│
-├── agent/                        # [PYTHON] Autonomous Agent
-│   ├── analyzer.py               # AI Logic & Gemini Integration
-│   ├── solana_client.py          # Real Devnet Bridge (Binary Anchor Encoding)
-│   ├── models.py                 # Pydantic Asset Schema
-│   └── news_feed.py              # Realistic Test Scenarios (TVL/Vol)
-│
-├── templates/                    # [WEB] Dashboard
-│   └── index.html                # Real-time monitoring UI
-│
-├── app.py                        # Autonomous API Bridge
-├── run.bat                       # One-click startup script (Windows)
-└── .gitignore                    # Security: agent_keypair.json is excluded
+├── contracts/               # [SMART CONTRACT] Anchor Program (lib.rs)
+├── agent/                   # [LOGIC] Autonomous AI Intelligence
+│   ├── analyzer.py          # AI Risk Expert Persona
+│   ├── solana_client.py     # Real-time On-chain Sync & Binary Bridge
+│   ├── monitor.py           # The "Heartbeat" Loop (DARS & Recovery)
+│   ├── news_engine.py       # Global Security Feed (Mock)
+│   └── models.py            # Data Schemas
+├── static/                  # [ASSETS] PWA Manifest & Icons
+├── templates/               # [UI] Responsive Master Dashboard
+├── app.py                   # Master Autonomous Bridge & SocketIO Server
+├── requirements.txt         # Production Dependencies
+└── run.bat                  # One-Click System Startup
 ```
-
----
-
-## 🔐 "Pure" Technical Implementation
-
-Unlike simulated solutions, our agent communicates with the **custom smart contract** using native binary encoding:
-- **PDA Derivation**: Matches `Pubkey.find_program_address` seeds with Rust.
-- **Anchor Discriminators**: Manually calculated 8-byte instruction headers for direct program invocation.
-- **BORSCH-Compatible Serialization**: Correct multi-byte string and integer encoding for cross-language compatibility.
 
 ---
 
 ## 🚀 One-Click Setup
 
-1. **Prerequisites**: Python 3.10+, Gemini API Key.
-2. **Installation**:
+1. **Environment**:
    ```bash
    pip install -r requirements.txt
-   echo GEMINI_API_KEY=your_key_here > .env
+   cp .env.example .env
+   # Add your GEMINI_API_KEY to .env
    ```
-3. **Run**:
+2. **Launch**:
    ```bash
    ./run.bat
    ```
-   *Open: http://127.0.0.1:5000*
+3. **URL**: `http://127.0.0.1:5000` (Install on phone via this link on your network).
 
 ---
 
-## 🏅 Winning Potential: Criteria Checklist
-
-- [x] **Product & Idea (20/20)**: Solves the "Manual Management" problem in DeFi.
-- [x] **Technical Implementation (25/25)**: Full Anchor contract, PDA, events, and native Python bridge.
-- [x] **Use of Solana (15/15)**: PDA-secured state, verifiable on-chain events.
-- [x] **No "AI for show"**: AI logic directly controls the `emergency_pause` state.
-- [x] **Completeness**: Detailed README, clean code, working web-demo.
+## 🏅 Institutional/Winning Potential
+- [x] **Zero "Fake AI"**: The AI logic is the **only** authority that can trigger on-chain state changes.
+- [x] **Binary Purity**: Uses direct Anchor discriminators and PDA derivation (no simplified SDKs).
+- [x] **Auditability**: Every AI decision is cryptographically signed and verifiable on Solscan.
+- [x] **Accessibility**: Master Dashboard on PC + PWA on Mobile.
 
 ---
-*Created for hookinnt/Decentrahack — Solana Case 2 Submission.*
+*Developed for hookinnt/Decentrahack — Case 2 Master Submission (v1.5).*

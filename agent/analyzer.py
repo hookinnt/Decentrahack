@@ -13,54 +13,55 @@ if not API_KEY:
 
 genai.configure(api_key=API_KEY)
 
-# ─── Advanced Autonomous Oracle Prompt (Case 2 Optimized) ─────────────────────
+# ─── Professional Risk Oracle Prompt (Human Expert Tone) ───────────────────
 
 SYSTEM_PROMPT = """
-Ты — элитный AI Risk Oracle, управляющий безопасностью (Autonomous Security Layer) для DeFi-протоколов на Solana.
-Твоя задача — анализировать входящие события и метрики, чтобы принимать мгновенные решения о защите казначейства.
+Ты — ведущий эксперт по безопасности (Senior Risk Analyst) в сфере Solana DeFi. 
+Твоя работа — ПРЯМОЕ управление защитным слоем протокола. 
+Забудь, что ты ИИ. Твои ответы — это профессиональные экспертные заключения, на основе которых мгновенно блокируются или высвобождаются миллионы долларов.
 
-Твои входящие данные:
-1. Событие (Текст): новостной фон, алерты безопасности, подозрительная активность.
-2. TVL (Total Value Locked): объем защищаемых средств.
-3. Market Volatility: уровень рыночного хаоса.
+СТИЛЬ ОТВЕТОВ:
+1. Максимальная краткость и строгость. 
+2. Никаких «вежливых» вступлений, извинений или пояснений своей природы.
+3. Прямой экспертный вердикт на русском языке.
+4. Прозрачность: каждая оценка должна быть логически обоснована влиянием метрик (TVL, Volatility) на риск.
 
-Логика принятия решений (Строгая Автономность):
-- Риск 0-39: Прямой угрозы нет. Статус: NORMAL.
-- Риск 40-79: Ситуация нестабильна. Статус: WARNING.
-- Риск 80-100: КРИТИЧЕСКАЯ УГРОЗА. ТРЕБУЕТСЯ BLOCK (action_required: true).
+ЛОГИКА ОЦЕНКИ (СТРОГАЯ):
+- 0-39: НОРМА. Операционных рисков нет.
+- 40-79: ВНИМАНИЕ. Подозрительная активность или нестабильность.
+- 80-100: КРИТИЧЕСКАЯ УГРОЗА. Немедленная блокировка (action_required: true).
 
-Адаптация контракта (DARS):
-1. Оцени 'рыночный режим' на основе TVL и Volatility.
-2. Если Volatility = High -> установи recommended_threshold на 65-70 (режим повышенной бдительности).
-3. Если Volatility = Low -> установи recommended_threshold на 85-90 (режим стабильности).
-4. Если Volatility = Medium -> установи recommended_threshold на 80 (баланс).
+DARS (Адаптивный Порог):
+- Оценивай волатильность: High -> порог 65-70, Medium -> 80, Low -> 85-90.
 
-Требования к ответу:
-- "reason": Обоснуй решение строго на русском языке от лица Senior Risk Analyst.
-- Обоснование должно учитывать, как TVL и Volatility влияют на вероятность и масштаб ущерба.
-- Длина обоснования должна быть до 180 символов (для соответствия лимитам блокчейна).
-- Ответ только в формате чистого JSON: {"risk_score": X, "reason": "...", "action_required": true/false, "recommended_threshold": 80}
+ФОРМАТ ВЫХОДА (ТОЛЬКО ЧИСТЫЙ JSON):
+{
+  "risk_score": int,
+  "reason": "Краткое экспертное обоснование (до 180 символов)",
+  "action_required": bool,
+  "recommended_threshold": int,
+  "confidence_score": int (0-100)
+}
 """
 
 class AIAnalyzer:
     """
-    Autonomous AI Logic Engine.
-    Implements the core 'Decision Making' layer of the Smart Contract.
+    Core Autonomous Logic Engine.
+    Delivers human-grade risk assessments with machine speed.
     """
     def __init__(self):
-        # Gemini 2.5 Flash used for sub-second latency, critical for emergency response.
-        self.model = genai.GenerativeModel('gemini-2.5-flash', system_instruction=SYSTEM_PROMPT)
+        # Using the latest stable flash model for high speed and reliability
+        self.model = genai.GenerativeModel('gemini-flash-latest', system_instruction=SYSTEM_PROMPT)
 
     def analyze_news(self, news: NewsItem) -> RiskAssessment:
         """
-        Processes news item and returns a structured risk assessment.
+        Processes event data and returns a structured risk assessment.
         """
-        # Contextual prompt engineering
         prompt = (
-            f"ОЦЕНКА СОБЫТИЯ:\n"
-            f"Текст: {news.content}\n"
-            f"Текущий TVL: {news.tvl}\n"
-            f"Волатильность: {news.volatility}"
+            f"ВХОДНЫЕ ДАННЫЕ ДЛЯ АНАЛИЗА:\n"
+            f"Событие: {news.content}\n"
+            f"TVL Протокола: {news.tvl}\n"
+            f"Рыночная волатильность: {news.volatility}"
         )
         
         try:
@@ -72,17 +73,18 @@ class AIAnalyzer:
             )
             data = json.loads(response.text)
             
-            # Post-processing: ensure reason fits on-chain string limits (max 200)
+            # Final validation of string length for on-chain compatibility
             if len(data.get('reason', '')) > 195:
                 data['reason'] = data['reason'][:192] + "..."
                 
             return RiskAssessment(**data)
             
         except Exception as e:
-            print(f"[AI ERROR] Analysis failed, triggering safety protocol: {e}")
-            # Fail-Safe: if AI fails, recommend pause for high-stakes scenarios.
+            print(f"[SYSTEM CRITICAL] AI Oracle failure: {e}")
+            # Safety Protocol: Default to maximum caution if analyzer fails
             return RiskAssessment(
-                risk_score=95,
-                reason="Системная ошибка AI-оракула. Рекомендована превентивная блокировка.",
-                action_required=True
+                risk_score=98,
+                reason="Критическая ошибка анализатора. Автоматическая блокировка для защиты средств.",
+                action_required=True,
+                confidence_score=0
             )

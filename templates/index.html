@@ -1,662 +1,416 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="ru">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Solana AI Risk Oracle</title>
-    <meta name="description" content="Autonomous AI agent that monitors DeFi threats and protects treasury assets on Solana in real time.">
+    <title>SOLANA AI RISK ORGANISM</title>
+    <meta name="description" content="Autonomous AI Security Layer for Solana Treasury. Gov-Grade.">
+    <link rel="manifest" href="/static/manifest.json">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
-        /* ── Design Tokens ─────────────────────────────────────── */
         :root {
-            --bg:           #080c14;
-            --surface:      #0d1525;
-            --surface-2:    #111d33;
-            --border:       rgba(255,255,255,0.07);
-            --border-bright:rgba(255,255,255,0.14);
-            --sol-green:    #14F195;
-            --sol-purple:   #9945FF;
+            --bg:           #060606;
+            --surface:      #121212;
+            --surface-alt:  #1a1a1a;
+            --border:       rgba(255,255,255,0.06);
+            --sol-green:    #00ffa3;
+            --sol-purple:   #8a2be2;
+            --sol-red:      #ff3131;
+            --sol-orange:   #ff9900;
             --sol-blue:     #00c2ff;
-            --warn:         #f59e0b;
-            --danger:       #ef4444;
-            --danger-dim:   rgba(239,68,68,0.12);
-            --warn-dim:     rgba(245,158,11,0.12);
-            --safe-dim:     rgba(20,241,149,0.10);
-            --text:         #e2e8f0;
-            --muted:        #64748b;
-            --mono:         'JetBrains Mono', monospace;
+            --text-main:    #ffffff;
+            --text-muted:   #777777;
+            --transition:   all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
         }
 
-        /* ── Reset & Base ──────────────────────────────────────── */
-        *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-
+        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
         body {
-            background: var(--bg);
-            color: var(--text);
-            font-family: 'Inter', system-ui, sans-serif;
-            font-size: 14px;
-            line-height: 1.6;
+            background-color: var(--bg);
+            color: var(--text-main);
+            font-family: 'Outfit', sans-serif;
+            -webkit-font-smoothing: antialiased;
+            overflow-x: hidden;
+            display: flex;
+            flex-direction: column;
             min-height: 100vh;
         }
 
-        /* ── Animated gradient top bar ─────────────────────────── */
-        .top-bar {
-            height: 3px;
-            background: linear-gradient(90deg, var(--sol-purple), var(--sol-green), var(--sol-blue), var(--sol-purple));
-            background-size: 300% 100%;
-            animation: gradientShift 4s linear infinite;
+        /* ── Canvas Background ──────────────────────────────────── */
+        #neural-mesh {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            z-index: -1;
+            opacity: 0.15;
+            pointer-events: none;
         }
-        @keyframes gradientShift { to { background-position: 300% 0; } }
 
-        /* ── Application shell ─────────────────────────────────── */
-        .app {
+        /* ── Responsive Layout ──────────────────────────────────── */
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px;
             display: grid;
-            grid-template-rows: auto 1fr;
-            min-height: calc(100vh - 3px);
+            grid-template-columns: 1fr;
+            gap: 24px;
         }
 
-        /* ── Header ────────────────────────────────────────────── */
-        .header {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            padding: 1rem 2rem;
-            border-bottom: 1px solid var(--border);
-            background: var(--surface);
+        @media (min-width: 1024px) {
+            .container {
+                grid-template-columns: 400px 1fr;
+                align-items: start;
+            }
+            .sidebar { position: sticky; top: 24px; }
         }
 
-        .logo {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-        }
-        .logo-icon {
-            width: 32px; height: 32px;
-            background: linear-gradient(135deg, var(--sol-purple), var(--sol-green));
-            border-radius: 8px;
-            display: flex; align-items: center; justify-content: center;
-            font-size: 16px;
-        }
-        .logo-title { font-weight: 600; font-size: 0.95rem; }
-        .logo-sub { font-size: 0.75rem; color: var(--muted); }
-
-        /* ── Status badge ──────────────────────────────────────── */
-        #statusBadge {
-            display: flex; align-items: center; gap: 8px;
-            font-size: 0.78rem; font-weight: 500;
-            padding: 0.4rem 0.85rem;
-            border-radius: 99px;
-            border: 1px solid var(--border-bright);
-            background: var(--surface-2);
-            transition: all 0.4s ease;
-            cursor: default;
-        }
-        #statusBadge.connected { border-color: rgba(20,241,149,0.3); }
-        #statusBadge.disconnected { border-color: rgba(239,68,68,0.3); }
-
-        .dot {
-            width: 8px; height: 8px; border-radius: 50%;
-            background: var(--muted);
-            flex-shrink: 0;
-        }
-        .dot.pulse {
-            background: var(--sol-green);
-            box-shadow: 0 0 0 0 rgba(20,241,149,0.6);
-            animation: pulse 2s infinite;
-        }
-        .dot.error { background: var(--danger); }
-        @keyframes pulse {
-            0%   { box-shadow: 0 0 0 0 rgba(20,241,149,0.6); }
-            70%  { box-shadow: 0 0 0 7px rgba(20,241,149,0); }
-            100% { box-shadow: 0 0 0 0 rgba(20,241,149,0); }
-        }
-
-        /* ── Main layout ───────────────────────────────────────── */
-        .main {
-            display: grid;
-            grid-template-columns: 1fr 340px;
-            gap: 0;
-            height: 100%;
-        }
-
-        /* ── Left panel ────────────────────────────────────────── */
-        .left-panel {
-            padding: 2rem;
-            border-right: 1px solid var(--border);
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-            overflow-y: auto;
-        }
-
-        /* ── Right sidebar ─────────────────────────────────────── */
-        .sidebar {
-            display: flex;
-            flex-direction: column;
-            overflow-y: auto;
-        }
-        .sidebar-section {
-            padding: 1.5rem;
-            border-bottom: 1px solid var(--border);
-        }
-
-        /* ── Section labels ────────────────────────────────────── */
-        .section-label {
-            font-size: 0.7rem;
-            font-weight: 600;
-            text-transform: uppercase;
-            letter-spacing: 0.08em;
-            color: var(--muted);
-            margin-bottom: 1rem;
-        }
-
-        /* ── Input card ────────────────────────────────────────── */
+        /* ── Common Card Style ──────────────────────────────────── */
         .card {
             background: var(--surface);
             border: 1px solid var(--border);
-            border-radius: 10px;
-            padding: 1.25rem;
+            border-radius: 24px;
+            padding: 24px;
+            position: relative;
+            overflow: hidden;
+            backdrop-filter: blur(20px);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
         }
 
-        textarea, input, select {
-            width: 100%;
-            background: rgba(0,0,0,0.25);
-            border: 1px solid var(--border-bright);
-            color: var(--text);
-            border-radius: 7px;
-            padding: 0.85rem 1rem;
-            font-family: inherit;
-            font-size: 0.88rem;
-            transition: border-color 0.2s, box-shadow 0.2s;
-        }
-        textarea { resize: vertical; min-height: 110px; line-height: 1.6; }
-        textarea:focus, input:focus, select:focus {
-            outline: none;
-            border-color: var(--sol-purple);
-            box-shadow: 0 0 0 3px rgba(153,69,255,0.12);
-        }
-        option { color: #000; background: #fff; }
-
-        .input-row {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-top: 1rem;
-        }
-
-        /* ── Analyze button ────────────────────────────────────── */
-        #analyzeBtn {
-            width: 100%;
-            margin-top: 1.25rem;
-            padding: 0.85rem 1.5rem;
-            background: linear-gradient(135deg, var(--sol-purple), #7b36d8);
-            color: #fff;
-            border: none;
-            border-radius: 8px;
-            font-family: inherit;
-            font-size: 0.9rem;
-            font-weight: 600;
-            cursor: pointer;
-            transition: opacity 0.2s, transform 0.15s;
-            display: flex; align-items: center; justify-content: center; gap: 8px;
-        }
-        #analyzeBtn:hover:not(:disabled) { opacity: 0.88; transform: translateY(-1px); }
-        #analyzeBtn:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
-
-        /* Spinner */
-        .spinner {
-            display: none;
-            width: 16px; height: 16px;
-            border: 2px solid rgba(255,255,255,0.3);
-            border-top-color: #fff;
-            border-radius: 50%;
-            animation: spin 0.7s linear infinite;
-        }
-        @keyframes spin { to { transform: rotate(360deg); } }
-
-        /* ── Results section ───────────────────────────────────── */
-        #resultsPanel {
-            display: none;
-            animation: fadeIn 0.4s ease;
-        }
-        @keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
-
-        .result-card {
-            border-radius: 10px;
-            padding: 1.25rem;
-            border: 1px solid var(--border);
-        }
-        .result-card.safe   { background: var(--safe-dim);  border-color: rgba(20,241,149,0.2); }
-        .result-card.warn   { background: var(--warn-dim);  border-color: rgba(245,158,11,0.25); }
-        .result-card.danger { background: var(--danger-dim);border-color: rgba(239,68,68,0.3); }
-
-        .score-row { display: flex; align-items: flex-end; justify-content: space-between; margin-bottom: 1rem; }
-        .score-value { font-size: 3rem; font-weight: 300; line-height: 1; }
-        .score-total { font-size: 1rem; color: var(--muted); margin-left: 2px; }
-
-        #statusLabel {
-            font-size: 0.8rem;
-            font-weight: 700;
-            letter-spacing: 0.06em;
-            padding: 0.35rem 0.75rem;
-            border-radius: 6px;
-        }
-        .label-safe   { background: rgba(20,241,149,0.15); color: var(--sol-green); }
-        .label-warn   { background: rgba(245,158,11,0.15); color: var(--warn); }
-        .label-danger { background: rgba(239,68,68,0.15); color: var(--danger); }
-
-        /* Risk meter */
-        .meter { height: 5px; background: rgba(255,255,255,0.07); border-radius: 3px; overflow: hidden; margin-bottom: 1rem; }
-        .meter-fill { height: 100%; width: 0%; border-radius: 3px; transition: width 1.2s cubic-bezier(0.4,0,0.2,1); }
-
-        #reasonText { font-size: 0.88rem; line-height: 1.7; color: #cbd5e1; }
-
-        /* ── TX Log ────────────────────────────────────────────── */
-        #txLogWrap { display: none; margin-top: 1.25rem; }
-        .tx-log {
-            font-family: var(--mono);
-            font-size: 0.75rem;
-            background: rgba(0,0,0,0.45);
-            border: 1px solid rgba(239,68,68,0.2);
-            border-radius: 8px;
-            padding: 1rem 1.2rem;
-            color: #94a3b8;
-            white-space: pre-wrap;
-            line-height: 1.8;
-        }
-        .tx-sig { color: var(--sol-green); text-decoration: none; }
-        .tx-sig:hover { text-decoration: underline; }
-
-        /* ── Sidebar: System info ──────────────────────────────── */
-        .info-row {
+        /* ── Header Area ────────────────────────────────────────── */
+        .header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            padding: 0.45rem 0;
-            border-bottom: 1px solid var(--border);
-            font-size: 0.8rem;
+            margin-bottom: 24px;
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+            padding: 24px 24px 0;
         }
-        .info-row:last-child { border-bottom: none; }
-        .info-key { color: var(--muted); }
-        .info-val { font-family: var(--mono); font-size: 0.72rem; color: var(--text); max-width: 160px; overflow: hidden; text-overflow: ellipsis; text-align: right; }
-        .info-val.green { color: var(--sol-green); }
+        .organism-id { font-weight: 700; color: var(--sol-purple); letter-spacing: 0.2em; font-size: 14px; }
+        .system-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sol-green); }
+        .pulse { width: 8px; height: 8px; background: var(--sol-green); border-radius: 50%; box-shadow: 0 0 10px var(--sol-green); animation: pulse 2s infinite; }
+        @keyframes pulse { 0% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0.3; transform: scale(1); } }
 
-        /* ── Sidebar: History ──────────────────────────────────── */
-        #historyList { display: flex; flex-direction: column; gap: 0.6rem; }
-
-        .history-item {
-            display: flex;
-            align-items: center;
-            gap: 0.75rem;
-            padding: 0.65rem 0.85rem;
-            border-radius: 8px;
-            background: var(--surface-2);
-            border: 1px solid var(--border);
-            cursor: default;
-            transition: border-color 0.2s;
-            animation: fadeIn 0.3s ease;
+        /* ── Risk Gauge Component ───────────────────────────────── */
+        .gauge-container {
+            position: relative;
+            width: 240px;
+            height: 140px;
+            margin: 0 auto 16px;
         }
-        .history-item:hover { border-color: var(--border-bright); }
+        .gauge-svg { width: 100%; height: 100%; }
+        .gauge-bg { fill: none; stroke: var(--surface-alt); stroke-width: 12; stroke-linecap: round; }
+        .gauge-fill { 
+            fill: none; 
+            stroke-width: 12; 
+            stroke-linecap: round; 
+            stroke-dasharray: 283; 
+            stroke-dashoffset: 283; 
+            transition: var(--transition);
+            filter: drop-shadow(0 0 8px var(--sol-purple));
+        }
+        .gauge-value {
+            position: absolute;
+            bottom: 5px; left: 50%;
+            transform: translateX(-50%);
+            font-size: 44px; font-weight: 700;
+        }
+        .gauge-value span { font-size: 16px; color: var(--text-muted); margin-left: 2px; }
 
-        .h-score {
-            font-size: 1.1rem;
+        /* ── State Indicators ───────────────────────────────────── */
+        .status-badge {
+            display: inline-flex;
+            padding: 6px 12px;
+            border-radius: 99px;
+            font-size: 12px;
             font-weight: 700;
-            min-width: 36px;
-            text-align: center;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 24px;
         }
-        .h-score.safe   { color: var(--sol-green); }
-        .h-score.warn   { color: var(--warn); }
-        .h-score.danger { color: var(--danger); }
+        .status-safe { background: rgba(0, 255, 163, 0.1); color: var(--sol-green); }
+        .status-danger { background: rgba(255, 49, 49, 0.1); color: var(--sol-red); animation: shake 0.5s ease; }
+        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
 
-        .h-meta { flex: 1; overflow: hidden; }
-        .h-status { font-size: 0.72rem; font-weight: 600; letter-spacing: 0.04em; }
-        .h-status.safe   { color: var(--sol-green); }
-        .h-status.warn   { color: var(--warn); }
-        .h-status.danger { color: var(--danger); }
-        .h-reason { font-size: 0.72rem; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        /* ── Authority Panel ────────────────────────────────────── */
+        .auth-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; }
+        .pubkey { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--sol-purple); word-break: break-all; margin-bottom: 20px; }
+        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; }
+        .metric-card { background: var(--surface-alt); padding: 16px; border-radius: 16px; }
+        .metric-title { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
+        .metric-value { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
 
-        .h-time { font-size: 0.68rem; color: var(--muted); flex-shrink: 0; }
-
-        .empty-history { text-align: center; color: var(--muted); font-size: 0.8rem; padding: 1.5rem 0; }
-
-        /* ── Footer agent info ─────────────────────────────────── */
-        .sidebar-footer {
-            padding: 1rem 1.5rem;
-            margin-top: auto;
-            border-top: 1px solid var(--border);
+        /* ── Audit Table ────────────────────────────────────────── */
+        .audit-trail { margin-top: 32px; }
+        .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .table-header h2 { font-size: 14px; color: var(--text-muted); text-transform: uppercase; }
+        .history-list { display: flex; flex-direction: column; gap: 12px; }
+        .history-item { 
+            background: var(--surface); 
+            border: 1px solid var(--border); 
+            border-radius: 16px; padding: 16px; 
+            display: flex; justify-content: space-between; align-items: flex-start;
+            transition: var(--transition);
         }
-        .agent-key {
-            font-family: var(--mono);
-            font-size: 0.68rem;
-            color: var(--muted);
-            word-break: break-all;
-            line-height: 1.6;
-        }
+        .history-item:hover { transform: translateY(-2px); border-color: rgba(138, 43, 226, 0.3); }
+        .h-info { flex: 1; margin-right: 16px; }
+        .h-reason { font-size: 13px; margin-top: 4px; line-height: 1.4; color: var(--text-muted); }
+        .h-tx { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--sol-purple); text-decoration: none; display: block; margin-top: 8px; }
+        .h-score { font-size: 18px; font-weight: 700; }
 
-        /* ── Responsive ────────────────────────────────────────── */
-        @media (max-width: 900px) {
-            .main { grid-template-columns: 1fr; }
-            .sidebar { border-top: 1px solid var(--border); }
-            .left-panel { padding: 1.25rem; }
+        /* ── Mobile Logic ────────────────────────────────────────── */
+        .actions { display: grid; gap: 12px; margin-top: 24px; }
+        .btn {
+            border: none; border-radius: 18px; padding: 20px;
+            font-family: inherit; font-weight: 700; font-size: 14px;
+            text-transform: uppercase; letter-spacing: 0.1em;
+            cursor: pointer; transition: var(--transition);
+            display: flex; align-items: center; justify-content: center; gap: 8px;
         }
+        .btn-primary { background: var(--text-main); color: var(--bg); }
+        .btn-secondary { background: var(--surface-alt); color: var(--text-main); border: 1px solid var(--border); }
+        .btn:active { transform: scale(0.96); }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+        /* ── Toast Notifications ────────────────────────────────── */
+        #notification-area { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 1000; width: calc(100% - 48px); max-width: 400px; display: flex; flex-direction: column; gap: 8px; }
+        .toast { background: rgba(0,0,0,0.9); border: 1px solid var(--sol-purple); padding: 16px; border-radius: 20px; backdrop-filter: blur(10px); display: flex; align-items: center; gap: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); animation: toastIn 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards; }
+        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -40px); } to { opacity: 1; transform: translate(0, 0); } }
+
+        .hidden { display: none; }
     </style>
 </head>
 <body>
 
-<div class="top-bar"></div>
+    <canvas id="neural-mesh"></canvas>
 
-<div class="app">
-    <!-- ── Header ─────────────────────────────────────────────── -->
-    <header class="header">
-        <div class="logo">
-            <div class="logo-icon">⚡</div>
-            <div>
-                <div class="logo-title">Solana AI Risk Oracle</div>
-                <div class="logo-sub">Emergency Treasury Protection · Devnet</div>
-            </div>
+    <div id="notification-area"></div>
+
+    <div class="header">
+        <div class="organism-id">SOLANA AI Risk Organism v1.5</div>
+        <div class="system-status">
+            <div class="pulse"></div>
+            LIVE SYNC
         </div>
-        <div id="statusBadge">
-            <span class="dot" id="statusDot"></span>
-            <span id="statusText">Connecting...</span>
-        </div>
-    </header>
+    </div>
 
-    <!-- ── Main ───────────────────────────────────────────────── -->
-    <div class="main">
-
-        <!-- Left: input + results -->
-        <div class="left-panel">
-
-            <!-- Input card -->
-            <div class="card">
-                <div class="section-label">Oracle Event Input</div>
-                <textarea
-                    id="newsInput"
-                    placeholder="Describe the on-chain event, news, or anomaly you want the AI to assess...&#10;&#10;Example: An unknown attacker exploited a reentrancy bug in the SolendMax pool and drained $50M USDC."
-                ></textarea>
-
-                <div class="input-row">
-                    <div>
-                        <div class="section-label" style="margin-bottom:0.5rem">Protocol TVL ($)</div>
-                        <input type="text" id="tvlInput" placeholder="e.g. 142M">
-                    </div>
-                    <div>
-                        <div class="section-label" style="margin-bottom:0.5rem">Market Volatility</div>
-                        <select id="volatilityInput">
-                            <option value="Low">Low — Stable</option>
-                            <option value="Medium" selected>Medium — Normal</option>
-                            <option value="High">High — Panic</option>
-                        </select>
-                    </div>
-                </div>
-
-                <button id="analyzeBtn" onclick="runAnalysis()">
-                    <span class="spinner" id="spinner"></span>
-                    <span id="btnText">Run AI Risk Assessment</span>
-                </button>
-            </div>
-
-            <!-- Results -->
-            <div id="resultsPanel">
-                <div class="result-card" id="resultCard">
-                    <div class="score-row">
-                        <div class="score-value" id="scoreValue">
-                            0<span class="score-total">/100</span>
-                        </div>
-                        <span id="statusLabel" class="label-safe">SAFE</span>
-                    </div>
-
-                    <div class="meter">
-                        <div class="meter-fill" id="meterFill"></div>
-                    </div>
-
-                    <p id="reasonText"></p>
-
-                    <!-- On-chain transaction log -->
-                    <div id="txLogWrap">
-                        <div class="section-label" style="margin-top:1rem">On-Chain Event Log (Memo Program)</div>
-                        <div class="tx-log" id="txLog"></div>
-                    </div>
-                </div>
-            </div>
-
-        </div><!-- /left-panel -->
-
-        <!-- Right: sidebar -->
+    <div class="container">
+        <!-- Sidebar: Operational Focus -->
         <div class="sidebar">
+            <div class="card" style="text-align:center;">
+                <div id="status-badge" class="status-badge status-safe">ACTIVE SYSTEM</div>
+                
+                <div class="gauge-container">
+                    <svg class="gauge-svg" viewBox="0 0 100 60">
+                        <path class="gauge-bg" d="M 10 50 A 40 40 0 1 1 90 50" />
+                        <path id="gauge-fill" class="gauge-fill" d="M 10 50 A 40 40 0 1 1 90 50" style="stroke: var(--sol-green);" />
+                    </svg>
+                    <div class="gauge-value" id="risk-score">0<span>%</span></div>
+                </div>
 
-            <!-- System status info -->
-            <div class="sidebar-section">
-                <div class="section-label">System Status</div>
-                <div id="infoPanel">
-                    <div class="info-row"><span class="info-key">Network</span><span class="info-val" id="infoCluster">—</span></div>
-                    <div class="info-row"><span class="info-key">Solana Version</span><span class="info-val" id="infoVersion">—</span></div>
-                    <div class="info-row"><span class="info-key">Agent Balance</span><span class="info-val green" id="infoBalance">—</span></div>
-                    <div class="info-row"><span class="info-key">DARS Threshold</span><span class="info-val" id="infoThreshold" style="color:var(--sol-purple)">—</span></div>
-                    <div class="info-row"><span class="info-key">RPC</span><span class="info-val" id="infoRpc">—</span></div>
+                <div id="ai-verdict" style="font-size: 14px; margin-bottom: 24px; color: var(--text-muted); min-height: 40px;">
+                    Инициализация нейронного щита...
+                </div>
+
+                <div class="metrics-grid">
+                    <div class="metric-card">
+                        <div class="metric-title">SOL / USD</div>
+                        <div class="metric-value" id="sol-price">$0.00</div>
+                    </div>
+                    <div class="metric-card">
+                        <div class="metric-title">TVL LOCKET</div>
+                        <div class="metric-value text-muted" id="sol-tvl">$1.4B</div>
+                    </div>
+                </div>
+
+                <div class="actions">
+                    <button class="btn btn-primary" onclick="manualCheck()" id="analyze-btn">ВЕРДИКТ ИИ</button>
+                    <button class="btn btn-secondary" onclick="manageTreasury('resume')" id="resume-btn">РАЗБЛОКИРОВАТЬ</button>
+                    <button class="btn btn-secondary" onclick="manageTreasury('initialize')" id="init-btn">ИНИЦИАЛИЗАЦИЯ PDA</button>
                 </div>
             </div>
 
-            <!-- Assessment history -->
-            <div class="sidebar-section" style="flex:1">
-                <div class="section-label">Recent Assessments</div>
-                <div id="historyList">
-                    <div class="empty-history">No analyses yet.<br>Submit an event to begin.</div>
+            <div class="card" style="margin-top:24px;">
+                <div class="auth-label">SMART CONTRACT AUTHORITY</div>
+                <div class="pubkey" id="agent-pk">...</div>
+                
+                <div style="display:flex; justify-content:space-between; align-items:center;">
+                    <div class="auth-label">PAUSE COUNT</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:700;" id="pause-count">0</div>
+                </div>
+                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
+                    <div class="auth-label">DARS THRESHOLD</div>
+                    <div style="font-family:'JetBrains Mono'; font-weight:700; color:var(--sol-orange);" id="active-threshold">80%</div>
                 </div>
             </div>
+        </div>
 
-            <!-- Agent pubkey footer -->
-            <div class="sidebar-footer">
-                <div class="section-label" style="margin-bottom:0.4rem">Agent Pubkey</div>
-                <div class="agent-key" id="agentPubkey">Loading...</div>
-            </div>
-
-        </div><!-- /sidebar -->
-
-    </div><!-- /main -->
-</div><!-- /app -->
-
-<script>
-    // ── State ───────────────────────────────────────────────────
-    const history = [];
-
-    // ── Helpers ─────────────────────────────────────────────────
-    function scoreClass(score) {
-        if (score >= 80) return 'danger';
-        if (score >= 40) return 'warn';
-        return 'safe';
-    }
-
-    function scoreLabel(score) {
-        if (score >= 80) return 'CRITICAL THREAT';
-        if (score >= 40) return 'ELEVATED RISK';
-        return 'NORMAL OPERATIONS';
-    }
-
-    function meterColor(score) {
-        if (score >= 80) return '#ef4444';
-        if (score >= 40) return '#f59e0b';
-        return '#14F195';
-    }
-
-    function nowTime() {
-        return new Date().toLocaleTimeString('en-GB', { hour: '2-digit', minute: '2-digit' });
-    }
-
-    // ── Status badge ─────────────────────────────────────────────
-    async function loadStatus() {
-        const badge = document.getElementById('statusBadge');
-        const dot   = document.getElementById('statusDot');
-        const text  = document.getElementById('statusText');
-
-        try {
-            const res  = await fetch('/api/status');
-            const data = await res.json();
-
-            if (data.connected) {
-                badge.className = 'connected';
-                dot.className   = 'dot pulse';
-                text.textContent = `Connected · Devnet`;
-
-                document.getElementById('infoCluster').textContent  = data.cluster || 'devnet';
-                document.getElementById('infoVersion').textContent  = data.solana_version || '—';
-                document.getElementById('infoBalance').textContent  = data.agent_balance_sol + ' SOL';
-                document.getElementById('infoThreshold').textContent = (data.risk_threshold || 80) + '/100';
-                document.getElementById('agentPubkey').textContent  = data.agent_pubkey || '—';
-            } else {
-                throw new Error(data.error || 'Disconnected');
-            }
-        } catch (err) {
-            badge.className = 'disconnected';
-            dot.className   = 'dot error';
-            text.textContent = 'RPC Error';
-            document.getElementById('agentPubkey').textContent = 'Cannot reach Solana Devnet';
-        }
-    }
-
-    // ── History panel ─────────────────────────────────────────────
-    function addHistory(score, reason) {
-        const cls     = scoreClass(score);
-        const label   = scoreLabel(score);
-        const snippet = reason.length > 52 ? reason.slice(0, 52) + '…' : reason;
-        const time    = nowTime();
-
-        history.unshift({ score, cls, label, snippet, time });
-        if (history.length > 8) history.pop();
-
-        const container = document.getElementById('historyList');
-        container.innerHTML = history.map(h => `
-            <div class="history-item">
-                <div class="h-score ${h.cls}">${h.score}</div>
-                <div class="h-meta">
-                    <div class="h-status ${h.cls}">${h.label}</div>
-                    <div class="h-reason">${h.snippet}</div>
+        <!-- Main Content: Audit Trail -->
+        <div class="main-content">
+            <div class="card" style="min-height: 500px;">
+                <div class="table-header">
+                    <h2>ЖУРНАЛ АВТОНОМНОГО АУДИТА</h2>
+                    <div id="last-sync" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono';">SYCNED: 00:00:00</div>
                 </div>
-                <div class="h-time">${h.time}</div>
+                
+                <div id="history-list" class="history-list">
+                    <!-- Dynamic -->
+                </div>
             </div>
-        `).join('');
-    }
+        </div>
+    </div>
 
-    // ── Main analysis ─────────────────────────────────────────────
-    async function runAnalysis() {
-        const input      = document.getElementById('newsInput').value.trim();
-        const tvl        = document.getElementById('tvlInput').value.trim() || 'Unknown';
-        const volatility = document.getElementById('volatilityInput').value;
-        const btn        = document.getElementById('analyzeBtn');
-        const spinner    = document.getElementById('spinner');
-        const btnText    = document.getElementById('btnText');
-        const results    = document.getElementById('resultsPanel');
+    <script>
+        const socket = io();
+        let lastId = null;
 
-        if (!input) {
-            document.getElementById('newsInput').focus();
-            return;
-        }
+        // Initialize Neural Mesh Background
+        function initMesh() {
+            const canvas = document.getElementById('neural-mesh');
+            const ctx = canvas.getContext('2d');
+            let w, h, particles = [];
 
-        // Loading state
-        btn.disabled          = true;
-        spinner.style.display = 'block';
-        btnText.textContent   = 'Analyzing…';
-        results.style.display = 'none';
+            const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
+            window.addEventListener('resize', resize);
+            resize();
 
-        try {
-            const res = await fetch('/api/analyze', {
-                method:  'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body:    JSON.stringify({ news: input, tvl, volatility }),
-            });
+            for(let i=0; i<40; i++) particles.push({ x: Math.random()*w, y: Math.random()*h, vx: (Math.random()-0.5)*0.5, vy: (Math.random()-0.5)*0.5 });
 
-            if (!res.ok) throw new Error(`Server error ${res.status}`);
-            const data = await res.json();
-            if (data.error) throw new Error(data.error);
-
-            // ── Render results ────────────────────────────────────
-            const cls   = scoreClass(data.risk_score);
-            const label = scoreLabel(data.risk_score);
-
-            // Result card theme
-            const card = document.getElementById('resultCard');
-            card.className = `result-card ${cls}`;
-
-            // Score
-            document.getElementById('scoreValue').innerHTML =
-                `${data.risk_score}<span class="score-total">/100</span>`;
-
-            // Status label
-            const labelEl = document.getElementById('statusLabel');
-            labelEl.textContent = label;
-            labelEl.className   = `label-${cls}`;
-
-            // Meter
-            const fill = document.getElementById('meterFill');
-            fill.style.width      = `${data.risk_score}%`;
-            fill.style.background = meterColor(data.risk_score);
-
-            // Reason
-            document.getElementById('reasonText').textContent = data.reason;
-
-            // DARS Update Note
-            if (data.threshold_updated) {
-                const note = document.createElement('div');
-                note.style = "margin-top: 1rem; font-size: 0.72rem; color: var(--sol-purple); font-weight: 600; display: flex; align-items: center; gap: 6px;";
-                note.innerHTML = `<span>⚡</span> AI ADAPTIVE GOVERNANCE: On-chain threshold updated to ${data.recommended_threshold}/100`;
-                document.getElementById('resultCard').appendChild(note);
-                loadStatus(); // refresh threshold display
-            }
-
-            // TX log
-            const txWrap = document.getElementById('txLogWrap');
-            const txLog  = document.getElementById('txLog');
-
-            if (data.risk_score >= 80) {
-                txWrap.style.display = 'block';
-
-                if (data.tx_hash) {
-                    const solscanUrl = `https://solscan.io/tx/${data.tx_hash}?cluster=devnet`;
-                    txLog.innerHTML =
-`Program   : MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr (SPL Memo)
-Action    : EMERGENCY_PAUSE event logged on-chain
-Signer    : AI Oracle Agent Keypair
-Network   : Solana Devnet
-Status    : ✓ CONFIRMED
-
-Signature : <a href="${solscanUrl}" target="_blank" class="tx-sig">${data.tx_hash}</a>
-Solscan   : <a href="${solscanUrl}" target="_blank" class="tx-sig">View on Explorer ↗</a>`;
-                } else {
-                    txLog.textContent =
-`Program   : MemoSq4gqABAXKb96qnH8TysNcWxMyWCqXgDLGmfcHr (SPL Memo)
-Status    : FAILED — Check backend logs (insufficient SOL or RPC error)`;
+            function draw() {
+                ctx.clearRect(0,0,w,h);
+                ctx.fillStyle = '#8a2be2';
+                ctx.strokeStyle = 'rgba(138, 43, 226, 0.1)';
+                particles.forEach(p => {
+                    p.x += p.vx; p.y += p.vy;
+                    if(p.x < 0 || p.x > w) p.vx *= -1; if(p.y < 0 || p.y > h) p.vy *= -1;
+                    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
+                });
+                for(let i=0; i<particles.length; i++) {
+                    for(let j=i+1; j<particles.length; j++) {
+                        let d = Math.hypot(particles[i].x-particles[j].x, particles[i].y-particles[j].y);
+                        if(d < 150) { ctx.beginPath(); ctx.moveTo(particles[i].x, particles[i].y); ctx.lineTo(particles[j].x, particles[j].y); ctx.stroke(); }
+                    }
                 }
+                requestAnimationFrame(draw);
+            }
+            draw();
+        }
+        initMesh();
+
+        // Socket.IO State Handler
+        socket.on('state_update', (state) => {
+            console.log("State Update:", state);
+            updateUI(state);
+        });
+
+        function updateUI(state) {
+            const { status, history, notifications } = state;
+            const onChain = status.on_chain;
+
+            // Basic Stats
+            document.getElementById('sol-price').innerText = `$${status.price}`;
+            document.getElementById('sol-tvl').innerText = `$${status.tvl}`;
+            document.getElementById('last-sync').innerText = `SYNCED: ${status.last_check}`;
+            document.getElementById('agent-pk').innerText = onChain.agent_pubkey;
+            document.getElementById('pause-count').innerText = onChain.pause_count;
+            document.getElementById('active-threshold').innerText = `${onChain.risk_threshold}%`;
+
+            // Gauge Update
+            const risk = history.length > 0 ? history[0].risk_score : 0;
+            const verdict = history.length > 0 ? history[0].reason : "Система в режиме ожидания...";
+            
+            document.getElementById('risk-score').innerHTML = `${risk}<span>%</span>`;
+            document.getElementById('ai-verdict').innerText = verdict;
+
+            const dashoffset = 283 - (283 * (risk / 100));
+            const fill = document.getElementById('gauge-fill');
+            fill.style.strokeDashoffset = dashoffset;
+            fill.style.stroke = risk < 40 ? 'var(--sol-green)' : (risk < 80 ? 'var(--sol-orange)' : 'var(--sol-red)');
+
+            // On-Chain Status Badge
+            const badge = document.getElementById('status-badge');
+            if (onChain.is_paused) {
+                badge.innerText = "TREASURY PAUSED";
+                badge.className = "status-badge status-danger";
+                document.getElementById('resume-btn').classList.remove('hidden');
             } else {
-                txWrap.style.display = 'none';
+                badge.innerText = "SYSTEM ACTIVE";
+                badge.className = "status-badge status-safe";
+                document.getElementById('resume-btn').classList.add('hidden');
             }
 
-            // Show results
-            results.style.display = 'block';
+            // Init Button Logic
+            if (onChain.account_missing) {
+                document.getElementById('init-btn').classList.remove('hidden');
+            } else {
+                document.getElementById('init-btn').classList.add('hidden');
+            }
 
-            // Update history
-            addHistory(data.risk_score, data.reason);
+            // Audit Trail
+            const list = document.getElementById('history-list');
+            list.innerHTML = history.map(h => `
+                <div class="history-item">
+                    <div class="h-info">
+                        <div style="display:flex; justify-content:space-between;">
+                            <span class="auth-label">${h.timestamp}</span>
+                            <div class="h-score" style="color: ${h.risk_score < 40 ? 'var(--sol-green)' : (h.risk_score < 80 ? 'var(--sol-orange)' : 'var(--sol-red)')}">${h.risk_score}%</div>
+                        </div>
+                        <div class="h-reason">${h.reason}</div>
+                        ${h.tx_hash ? `<a href="https://solscan.io/tx/${h.tx_hash}?cluster=devnet" target="_blank" class="h-tx">TX: ${h.tx_hash.slice(0,16)}...</a>` : ''}
+                    </div>
+                </div>
+            `).join('');
 
-        } catch (err) {
-            alert('Analysis error: ' + err.message);
-        } finally {
-            btn.disabled          = false;
-            spinner.style.display = 'none';
-            btnText.textContent   = 'Run AI Risk Assessment';
+            // Notifications
+            if (notifications.length > 0 && notifications[0].id !== lastId) {
+                showToast(notifications[0].title, notifications[0].message);
+                lastId = notifications[0].id;
+            }
         }
-    }
 
-    // ── Keyboard shortcut: Ctrl+Enter ─────────────────────────────
-    document.addEventListener('keydown', (e) => {
-        if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') runAnalysis();
-    });
+        function showToast(title, message) {
+            const area = document.getElementById('notification-area');
+            const toast = document.createElement('div');
+            toast.className = 'toast';
+            toast.innerHTML = `
+                <div style="font-size: 24px;">🛡️</div>
+                <div>
+                    <div style="font-weight: 700; font-size: 14px;">${title}</div>
+                    <div style="font-size: 12px; color: var(--text-muted);">${message}</div>
+                </div>
+            `;
+            area.appendChild(toast);
+            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 5000);
+        }
 
-    // ── Boot ──────────────────────────────────────────────────────
-    loadStatus();
-    // refresh status every 30 seconds
-    setInterval(loadStatus, 30_000);
-</script>
+        async function manualCheck() {
+            const btn = document.getElementById('analyze-btn');
+            btn.disabled = true; btn.innerText = 'АНАЛИЗ...';
+            try {
+                await fetch('/api/analyze', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({ news: 'Экстренный министерский запрос аудита состояния казначейства.', tvl: '1.4B', volatility: 'Medium' })
+                });
+            } catch(e) { console.error(e); }
+            finally { btn.disabled = false; btn.innerText = 'ВЕРДИКТ ИИ'; }
+        }
 
+        async function manageTreasury(action) {
+            const btn = event.target;
+            btn.disabled = true;
+            try {
+                const res = await fetch(`/api/${action}`, { method: 'POST' });
+                const data = await res.json();
+                if (data.signature) {
+                    showToast('СИСТЕМА ОБНОВЛЕНА', `Транзакция подтверждена: ${data.signature.slice(0,10)}...`);
+                }
+            } catch(e) { console.error(e); }
+            finally { btn.disabled = false; }
+        }
+    </script>
 </body>
 </html>
