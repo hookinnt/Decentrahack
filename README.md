@@ -1,4 +1,5 @@
-# 🏛️ Solana AI Risk Oracle — Phase 7: Autonomous Organism
+[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/hookinnt/Decentrahack)
+[![Deploy to HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/deploy-to-spaces-lg.svg)](https://huggingface.co/new-space?template=hookinnt/Decentrahack)
 
 > **A professional-grade, autonomous security layer specifically engineered to protect Solana protocols from exploits, market shocks, and social engineering via on-chain AI intervention.**
 
