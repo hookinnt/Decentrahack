@@ -79,27 +79,31 @@ This project is engineered to work as a real phone application for government/in
 
 ---
 
-## 🚀 One-Click Setup
+## 🚀 Cloud Deployment Guide (24/7 Persistent)
 
-1. **Environment**:
-   ```bash
-   pip install -r requirements.txt
-   cp .env.example .env
-   # Add your GEMINI_API_KEY to .env
-   ```
-2. **Launch**:
-   ```bash
-   ./run.bat
-   ```
-3. **URL**: `http://127.0.0.1:5000` (Install on phone via this link on your network).
+To ensure your "AI Risk Organism" never stops monitoring the Solana blockchain, follow these steps to host it in the cloud.
+
+### Option A: HuggingFace Spaces (Recommended - Free 24/7)
+1. **Fork** this repository to your GitHub account.
+2. Go to [huggingface.co/new-space](https://huggingface.co/new-space).
+3. Select **Docker** as the SDK.
+4. Choose **"Import from GitHub"** and select your fork.
+5. **CRITICAL**: Go to **Settings > Variables and Secrets**.
+   - Add a **New Secret**: `GEMINI_API_KEY` = *`your_key_here`*.
+6. Done! Your Master Dashboard will be live at `https://huggingface.co/spaces/your-name/repo-name`.
+
+### Option B: Render.com
+1. **Connect** your GitHub repo to Render.
+2. Select **Web Service**.
+3. Render will automatically detect `render.yaml` and configure everything.
+4. Add `GEMINI_API_KEY` to the **Environment Variables** tab in the Render Dashboard.
 
 ---
 
-## 🏅 Institutional/Winning Potential
-- [x] **Zero "Fake AI"**: The AI logic is the **only** authority that can trigger on-chain state changes.
-- [x] **Binary Purity**: Uses direct Anchor discriminators and PDA derivation (no simplified SDKs).
-- [x] **Auditability**: Every AI decision is cryptographically signed and verifiable on Solscan.
-- [x] **Accessibility**: Master Dashboard on PC + PWA on Mobile.
+## 🔐 Security & "Gov-Grade" Architecture
+- **No Private Keys in Code**: The agent uses environment variables for all sensitive data.
+- **Stateless Execution**: Each AI intervention is verified against the on-chain PDA state, making the system resilient to server restarts.
+- **Audit Logging**: Every on-chain event is immutable and verifiable via the Dashboard's Solscan links.
 
 ---
 *Developed for hookinnt/Decentrahack — Case 2 Master Submission (v1.5).*
