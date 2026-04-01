@@ -279,7 +279,7 @@ def execute_initialize() -> str | None:
         AccountMeta(pubkey=Pubkey.from_string("11111111111111111111111111111111"), is_signer=False, is_writable=False), # System Program
     ]
     
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_initialize_ix())
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_initialize_ix(), accounts)
     sig = _send_tx(ix, kp)
     if sig: print(f"{Fore.GREEN}[OK] Казначейство создано. Sig: {sig}")
     return sig
@@ -297,7 +297,7 @@ def execute_emergency_pause(reason: str, risk_score: int) -> str | None:
         AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
     ]
 
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_emergency_pause_ix(risk_score, reason))
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_emergency_pause_ix(risk_score, reason), accounts)
     sig = _send_tx(ix, kp)
     if sig: print(f"{Fore.GREEN}[OK] Казначейство ЗАБЛОКИРОВАНО. Sig: {sig}")
     return sig
@@ -315,7 +315,7 @@ def execute_resume() -> str | None:
         AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
     ]
 
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_resume_ix())
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_resume_ix(), accounts)
     sig = _send_tx(ix, kp)
     if sig: print(f"{Fore.GREEN}[OK] Казначейство РАЗБЛОКИРОВАНО. Sig: {sig}")
     return sig
@@ -333,7 +333,7 @@ def execute_threshold_update(new_threshold: int) -> str | None:
         AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
     ]
 
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, accounts, data=encode_update_threshold_ix(new_threshold))
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_update_threshold_ix(new_threshold), accounts)
     sig = _send_tx(ix, kp)
     if sig: print(f"{Fore.GREEN}[OK] Порог обновлен. Sig: {sig}")
     return sig
