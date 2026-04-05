@@ -91,6 +91,3 @@ graph TD
 ├── requirements.txt         # Зависимости Python
 └── run.bat                  # Идеальный скрипт: в один клик поднимает оба сервера и браузер
 ```
-
----
-*Сделано для крю — Финальный Коммит (Final Enterprise UI Overhaul)*
