@@ -2,417 +2,346 @@
 <html lang="ru">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SOLANA AI RISK ORGANISM</title>
-    <meta name="description" content="Autonomous AI Security Layer for Solana Treasury. Gov-Grade.">
-    <link rel="manifest" href="/static/manifest.json">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;500;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Risk Manager / Live Engine</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
     <style>
         :root {
-            --bg:           #060606;
-            --surface:      #121212;
-            --surface-alt:  #1a1a1a;
-            --border:       rgba(255,255,255,0.06);
-            --sol-green:    #00ffa3;
-            --sol-purple:   #8a2be2;
-            --sol-red:      #ff3131;
-            --sol-orange:   #ff9900;
-            --sol-blue:     #00c2ff;
-            --text-main:    #ffffff;
-            --text-muted:   #777777;
-            --transition:   all 0.4s cubic-bezier(0.165, 0.84, 0.44, 1);
+            --bg-color: #0b0c10;
+            --card-bg: #111115;
+            --card-border: #222228;
+            --text-main: #f0f0f2;
+            --text-muted: #80808a;
+            --danger: #ff3b30;
+            --success: #34c759;
+            --warning: #ffcc00;
         }
 
-        * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
         body {
-            background-color: var(--bg);
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg-color);
             color: var(--text-main);
-            font-family: 'Outfit', sans-serif;
-            -webkit-font-smoothing: antialiased;
-            overflow-x: hidden;
+            min-height: 100vh;
             display: flex;
             flex-direction: column;
-            min-height: 100vh;
+            overflow-x: hidden;
         }
 
-        /* ── Canvas Background ──────────────────────────────────── */
-        #neural-mesh {
-            position: fixed;
-            top: 0; left: 0; width: 100%; height: 100%;
-            z-index: -1;
-            opacity: 0.15;
-            pointer-events: none;
+        /* --- Marquee --- */
+        .marquee {
+            width: 100%; background: #000; border-bottom: 1px solid var(--card-border);
+            color: var(--text-muted); font-size: 13px; font-weight: 500; letter-spacing: 1px;
+            padding: 8px 0; overflow: hidden; white-space: nowrap; position: relative;
+            z-index: 10;
+        }
+        .marquee-content { display: inline-block; animation: marquee 30s linear infinite; }
+        .marquee-content span { margin-right: 40px; color: #a1a1aa; }
+        .marquee-content span b { color: var(--text-main); }
+        .marquee-content span.up { color: var(--success); }
+        .marquee-content span.down { color: var(--danger); }
+        @keyframes marquee { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+
+        /* --- Layout --- */
+        .wrapper {
+            margin: 0 auto; width: 100%; max-width: 1200px; padding: 24px 16px;
+            display: flex; flex-direction: column; gap: 32px; flex: 1; align-items: center;
         }
 
-        /* ── Responsive Layout ──────────────────────────────────── */
-        .container {
-            width: 100%;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px;
-            display: grid;
-            grid-template-columns: 1fr;
-            gap: 24px;
-        }
-
-        @media (min-width: 1024px) {
-            .container {
-                grid-template-columns: 400px 1fr;
-                align-items: start;
+        @media(min-width: 1024px) {
+            .wrapper {
+                flex-direction: row; align-items: flex-start; justify-content: center;
+                gap: 48px; padding-top: 64px;
             }
-            .sidebar { position: sticky; top: 24px; }
+            .left-col { width: 420px; flex-shrink: 0; }
+            .right-col { width: 500px; flex-shrink: 0; }
+        }
+        @media(max-width: 1023px) {
+            .left-col, .right-col { width: 100%; max-width: 450px; }
         }
 
-        /* ── Common Card Style ──────────────────────────────────── */
-        .card {
-            background: var(--surface);
-            border: 1px solid var(--border);
-            border-radius: 24px;
-            padding: 24px;
-            position: relative;
-            overflow: hidden;
-            backdrop-filter: blur(20px);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+        /* --- Main Card --- */
+        .risk-card {
+            background: var(--card-bg); border: 1px solid var(--card-border);
+            border-radius: 24px; padding: 40px 24px; text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4); position: relative; overflow: hidden;
         }
+        .risk-card::before { content: ''; position: absolute; inset: 0; opacity: 0.05; transition: background 1s; pointer-events: none; }
+        .risk-card.state-danger::before { background: radial-gradient(circle at top, var(--danger) 0%, transparent 60%); }
+        .risk-card.state-success::before { background: radial-gradient(circle at top, var(--success) 0%, transparent 60%); }
+        .risk-card.state-warning::before { background: radial-gradient(circle at top, var(--warning) 0%, transparent 60%); }
 
-        /* ── Header Area ────────────────────────────────────────── */
-        .header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 24px;
-            width: 100%;
-            max-width: 1200px;
-            margin: 0 auto;
-            padding: 24px 24px 0;
+        /* --- Status Icon --- */
+        .icon-wrapper {
+            width: 72px; height: 72px; margin: 0 auto 24px; border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.1); transition: all 0.5s;
         }
-        .organism-id { font-weight: 700; color: var(--sol-purple); letter-spacing: 0.2em; font-size: 14px; }
-        .system-status { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--sol-green); }
-        .pulse { width: 8px; height: 8px; background: var(--sol-green); border-radius: 50%; box-shadow: 0 0 10px var(--sol-green); animation: pulse 2s infinite; }
-        @keyframes pulse { 0% { opacity: 0.3; transform: scale(1); } 50% { opacity: 1; transform: scale(1.2); } 100% { opacity: 0.3; transform: scale(1); } }
+        .state-danger .icon-wrapper { border-color: rgba(255,59,48,0.3); background: rgba(255,59,48,0.05); }
+        .state-success .icon-wrapper { border-color: rgba(52,199,89,0.3); background: rgba(52,199,89,0.05); }
+        .state-warning .icon-wrapper { border-color: rgba(255,204,0,0.3); background: rgba(255,204,0,0.05); }
+        .icon-svg { width: 32px; height: 32px; stroke-width: 1.5; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+        .state-danger .icon-svg { stroke: var(--danger); }
+        .state-success .icon-svg { stroke: var(--success); }
+        .state-warning .icon-svg { stroke: var(--warning); }
 
-        /* ── Risk Gauge Component ───────────────────────────────── */
-        .gauge-container {
-            position: relative;
-            width: 240px;
-            height: 140px;
-            margin: 0 auto 16px;
+        /* --- Typography --- */
+        .status-text {
+            font-size: 14px; font-weight: 700; letter-spacing: 2.5px; margin-bottom: 12px;
+            transition: color 0.5s; text-transform: uppercase;
         }
-        .gauge-svg { width: 100%; height: 100%; }
-        .gauge-bg { fill: none; stroke: var(--surface-alt); stroke-width: 12; stroke-linecap: round; }
-        .gauge-fill { 
-            fill: none; 
-            stroke-width: 12; 
-            stroke-linecap: round; 
-            stroke-dasharray: 283; 
-            stroke-dashoffset: 283; 
-            transition: var(--transition);
-            filter: drop-shadow(0 0 8px var(--sol-purple));
-        }
-        .gauge-value {
-            position: absolute;
-            bottom: 5px; left: 50%;
-            transform: translateX(-50%);
-            font-size: 44px; font-weight: 700;
-        }
-        .gauge-value span { font-size: 16px; color: var(--text-muted); margin-left: 2px; }
+        .state-danger .status-text { color: var(--danger); }
+        .state-success .status-text { color: var(--success); }
+        .state-warning .status-text { color: var(--warning); }
 
-        /* ── State Indicators ───────────────────────────────────── */
-        .status-badge {
-            display: inline-flex;
-            padding: 6px 12px;
-            border-radius: 99px;
-            font-size: 12px;
-            font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.1em;
-            margin-bottom: 24px;
-        }
-        .status-safe { background: rgba(0, 255, 163, 0.1); color: var(--sol-green); }
-        .status-danger { background: rgba(255, 49, 49, 0.1); color: var(--sol-red); animation: shake 0.5s ease; }
-        @keyframes shake { 0%, 100% { transform: translateX(0); } 25% { transform: translateX(-5px); } 75% { transform: translateX(5px); } }
+        .score-value { font-size: 80px; font-weight: 800; line-height: 1; margin-bottom: 24px; letter-spacing: -2px; display: flex; justify-content: center; align-items: baseline; }
+        .score-percent { font-size: 24px; font-weight: 600; color: var(--text-muted); margin-left: 4px; letter-spacing: 0; }
+        
+        .score-label { font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: var(--text-muted); text-transform: uppercase; margin-bottom: 16px; min-height: 14px;}
+        .score-desc { font-size: 13px; color: #66666e; line-height: 1.5; font-weight: 400; min-height: 38px;}
 
-        /* ── Authority Panel ────────────────────────────────────── */
-        .auth-label { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; text-transform: uppercase; }
-        .pubkey { font-family: 'JetBrains Mono', monospace; font-size: 12px; color: var(--sol-purple); word-break: break-all; margin-bottom: 20px; }
-        .metrics-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 24px; }
-        .metric-card { background: var(--surface-alt); padding: 16px; border-radius: 16px; }
-        .metric-title { font-size: 11px; color: var(--text-muted); margin-bottom: 4px; }
-        .metric-value { font-size: 18px; font-weight: 700; font-family: 'JetBrains Mono', monospace; }
-
-        /* ── Audit Table ────────────────────────────────────────── */
-        .audit-trail { margin-top: 32px; }
-        .table-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
-        .table-header h2 { font-size: 14px; color: var(--text-muted); text-transform: uppercase; }
-        .history-list { display: flex; flex-direction: column; gap: 12px; }
-        .history-item { 
-            background: var(--surface); 
-            border: 1px solid var(--border); 
-            border-radius: 16px; padding: 16px; 
-            display: flex; justify-content: space-between; align-items: flex-start;
-            transition: var(--transition);
-        }
-        .history-item:hover { transform: translateY(-2px); border-color: rgba(138, 43, 226, 0.3); }
-        .h-info { flex: 1; margin-right: 16px; }
-        .h-reason { font-size: 13px; margin-top: 4px; line-height: 1.4; color: var(--text-muted); }
-        .h-tx { font-family: 'JetBrains Mono', monospace; font-size: 10px; color: var(--sol-purple); text-decoration: none; display: block; margin-top: 8px; }
-        .h-score { font-size: 18px; font-weight: 700; }
-
-        /* ── Mobile Logic ────────────────────────────────────────── */
-        .actions { display: grid; gap: 12px; margin-top: 24px; }
+        /* --- Actions --- */
+        .actions { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
         .btn {
-            border: none; border-radius: 18px; padding: 18px;
-            font-family: inherit; font-weight: 700; font-size: 14px;
-            text-transform: uppercase; letter-spacing: 0.1em;
-            cursor: pointer; transition: var(--transition);
-            display: flex; align-items: center; justify-content: center; gap: 8px;
-            touch-action: manipulation;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.2);
+            width: 100%; border-radius: 9999px; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700;
+            padding: 18px 24px; cursor: pointer; transition: all 0.2s; border: none; letter-spacing: 0.5px; text-transform: uppercase;
         }
-        .btn:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(0,0,0,0.3); }
-        .btn-primary { background: var(--text-main); color: var(--bg); }
-        .btn-secondary { background: var(--surface-alt); color: var(--text-main); border: 1px solid var(--border); }
-        .btn:active { transform: scale(0.96); }
+        .btn-primary { background: #fff; color: #000; box-shadow: 0 4px 12px rgba(255,255,255,0.1); }
+        .btn-primary:active:not(:disabled) { transform: scale(0.98); background: #e0e0e0; }
+        .btn-secondary { background: #16161a; color: #fff; border: 1px solid var(--card-border); }
+        .btn-secondary:hover:not(:disabled) { background: #1f1f24; border-color: #333; }
         .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .btn-unlock { background: transparent; border: 1px solid var(--danger); color: var(--danger); margin-top: 12px; }
+        .btn-unlock:hover { background: rgba(255,59,48,0.1); }
+        
+        .btn-init { background: transparent; border: 1px solid var(--warning); color: var(--warning); margin-top: 12px; }
+        .btn-init:hover { background: rgba(255,204,0,0.1); }
+        
+        .hidden { display: none !important; }
 
-        /* ── Toast Notifications ────────────────────────────────── */
-        #notification-area { position: fixed; top: 24px; left: 50%; transform: translateX(-50%); z-index: 1000; width: calc(100% - 48px); max-width: 400px; display: flex; flex-direction: column; gap: 8px; }
-        .toast { background: rgba(0,0,0,0.9); border: 1px solid var(--sol-purple); padding: 16px; border-radius: 20px; backdrop-filter: blur(10px); display: flex; align-items: center; gap: 16px; box-shadow: 0 20px 40px rgba(0,0,0,0.6); animation: toastIn 0.5s cubic-bezier(0.19, 1, 0.22, 1) forwards; }
-        @keyframes toastIn { from { opacity: 0; transform: translate(-50%, -40px); } to { opacity: 1; transform: translate(0, 0); } }
+        /* --- History Section --- */
+        .history-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+        .hist-title { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; color: var(--text-muted); text-transform: uppercase; }
+        .hist-time { font-size: 11px; font-weight: 500; color: #555; }
+        
+        .timeline { display: flex; flex-direction: column; gap: 12px; }
+        .hist-item {
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 16px;
+            border-radius: 12px; display: flex; gap: 16px; align-items: center; transition: background 0.3s;
+        }
+        
+        .hist-icon {
+            width: 40px; height: 40px; border-radius: 10px; background: rgba(0,0,0,0.5); display: flex;
+            align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid;
+        }
+        .hist-item.danger .hist-icon { border-color: rgba(255,59,48,0.2); color: var(--danger); }
+        .hist-item.success .hist-icon { border-color: rgba(52,199,89,0.2); color: var(--success); }
+        .hist-item.warning .hist-icon { border-color: rgba(255,204,0,0.2); color: var(--warning); }
+        .hist-icon svg { width: 18px; height: 18px; stroke-width: 2; fill: none; stroke: currentColor; }
 
-        .hidden { display: none; }
+        .hist-body { flex: 1; }
+        .hist-body-title { font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .hist-body-time { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+        .hist-body-desc { font-size: 12px; color: #777; line-height: 1.4; font-weight: 500; }
+        
+        .hist-val { font-size: 15px; font-weight: 700; }
+        .hist-item.danger .hist-val { color: var(--danger); }
+        .hist-item.success .hist-val { color: var(--success); }
+        .hist-item.warning .hist-val { color: var(--warning); }
+
+        .empty-history { font-size: 12px; color: var(--text-muted); text-align: center; padding: 40px; background: rgba(255,255,255,0.02); border-radius: 12px; }
+        
+        /* Toast */
+        #toasts { position: fixed; bottom: 24px; right: 24px; display: flex; flex-direction: column; gap: 8px; z-index: 100; }
+        .toast { background: var(--card-bg); border: 1px solid var(--card-border); color: var(--text-main); padding: 12px 16px; border-radius: 8px; font-size: 13px; box-shadow: 0 4px 12px rgba(0,0,0,0.5); }
+
     </style>
 </head>
 <body>
 
-    <canvas id="neural-mesh"></canvas>
+    <div id="toasts"></div>
 
-    <div id="notification-area"></div>
-
-    <div class="header">
-        <div class="organism-id">SOLANA AI Risk Organism v1.5</div>
-        <div class="system-status">
-            <div class="pulse"></div>
-            LIVE SYNC
+    <div class="marquee">
+        <div class="marquee-content" id="nav-ticker">
+            <span>● <b>SOL/USDT</b> $145.20 <span class="up">(+2.4%)</span></span>
+            <span>● <b>TPS Solana:</b> 2,642</span>
+            <span>● <b>Wormhole Bridge:</b> Operational</span>
+            <span>● <b>DARS Live Node:</b> Connected</span>
+            <span>● <b>Balance:</b> <span id="ticker-bal">SYNCING</span></span>
+            <span>● <b>Threshold:</b> <span id="ticker-thresh">--%</span></span>
+            <!-- Replicate for wide screens -->
+            <span>● <b>SOL/USDT</b> $145.20 <span class="up">(+2.4%)</span></span>
+            <span>● <b>TPS Solana:</b> 2,642</span>
+            <span>● <b>Wormhole Bridge:</b> Operational</span>
+            <span>● <b>Balance:</b> <span id="ticker-bal-2">SYNCING</span></span>
         </div>
     </div>
 
-    <div class="container">
-        <!-- Sidebar: Operational Focus -->
-        <div class="sidebar">
-            <div class="card" style="text-align:center;">
-                <div id="status-badge" class="status-badge status-safe">ACTIVE SYSTEM</div>
+    <div class="wrapper">
+        <!-- Main Card Column -->
+        <div class="left-col">
+            <div class="risk-card state-success" id="main-card">
+                <div class="icon-wrapper" id="card-icon">
+                    <svg class="icon-svg" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>
+                </div>
                 
-                <div class="gauge-container">
-                    <svg class="gauge-svg" viewBox="0 0 100 60">
-                        <path class="gauge-bg" d="M 10 50 A 40 40 0 1 1 90 50" />
-                        <path id="gauge-fill" class="gauge-fill" d="M 10 50 A 40 40 0 1 1 90 50" style="stroke: var(--sol-green);" />
-                    </svg>
-                    <div class="gauge-value" id="risk-score">0<span>%</span></div>
+                <div class="status-text" id="status-title">ПОДКЛЮЧЕНИЕ</div>
+                
+                <div class="score-value">
+                    <span id="score-num">0</span><span class="score-percent">%</span>
                 </div>
-
-                <div id="ai-verdict" style="font-size: 14px; margin-bottom: 24px; color: var(--text-muted); min-height: 40px;">
-                    Инициализация нейронного щита...
-                </div>
-
-                <div class="metrics-grid">
-                    <div class="metric-card">
-                        <div class="metric-title">SOL / USD</div>
-                        <div class="metric-value" id="sol-price">$0.00</div>
-                    </div>
-                    <div class="metric-card">
-                        <div class="metric-title">TVL LOCKET</div>
-                        <div class="metric-value text-muted" id="sol-tvl">$1.4B</div>
-                    </div>
-                </div>
-
-                <div class="actions">
-                    <button class="btn btn-primary" onclick="manualCheck()" id="analyze-btn">ВЕРДИКТ ИИ</button>
-                    <button class="btn btn-secondary" onclick="manageTreasury('resume')" id="resume-btn">РАЗБЛОКИРОВАТЬ</button>
-                    <button class="btn btn-secondary" onclick="manageTreasury('initialize')" id="init-btn">ИНИЦИАЛИЗАЦИЯ PDA</button>
+                
+                <div class="score-label">ОЖИДАНИЕ ТЕЛЕМЕТРИИ</div>
+                <div class="score-desc" id="status-desc">
+                    Производится подключение к Solana Devnet...
                 </div>
             </div>
 
-            <div class="card" style="margin-top:24px;">
-                <div class="auth-label">SMART CONTRACT AUTHORITY</div>
-                <div class="pubkey" id="agent-pk">...</div>
-                
-                <div style="display:flex; justify-content:space-between; align-items:center;">
-                    <div class="auth-label">PAUSE COUNT</div>
-                    <div style="font-family:'JetBrains Mono'; font-weight:700;" id="pause-count">0</div>
-                </div>
-                <div style="display:flex; justify-content:space-between; align-items:center; margin-top:8px;">
-                    <div class="auth-label">DARS THRESHOLD</div>
-                    <div style="font-family:'JetBrains Mono'; font-weight:700; color:var(--sol-orange);" id="active-threshold">80%</div>
-                </div>
+            <div class="actions">
+                <button class="btn btn-primary" onclick="reqAnalysis()" id="btn-audit">ПРОВЕРИТЬ СЕЙЧАС</button>
+                <button class="btn btn-secondary" onclick="reqStatus()" id="btn-update">ОБНОВИТЬ СТАТУС</button>
+                <button class="btn btn-unlock hidden" onclick="manageTx('resume')" id="btn-resume">РАЗБЛОКИРОВАТЬ СРЕДСТВА</button>
+                <button class="btn btn-init hidden" onclick="manageTx('initialize')" id="btn-init">ИНИЦИАЛИЗИРОВАТЬ PDA</button>
             </div>
         </div>
 
-        <!-- Main Content: Audit Trail -->
-        <div class="main-content">
-            <div class="card" style="min-height: 500px;">
-                <div class="table-header">
-                    <h2>ЖУРНАЛ АВТОНОМНОГО АУДИТА</h2>
-                    <div id="last-sync" style="font-size: 11px; color: var(--text-muted); font-family: 'JetBrains Mono';">SYCNED: 00:00:00</div>
-                </div>
-                
-                <div id="history-list" class="history-list">
-                    <!-- Dynamic -->
-                </div>
+        <!-- History Column -->
+        <div class="right-col">
+            <div class="history-header">
+                <div class="hist-title">ИСТОРИЯ АНАЛИЗА</div>
+                <div class="hist-time" id="hist-update-time">Ожидание...</div>
+            </div>
+            
+            <div class="timeline" id="history-feed">
+                <div class="empty-history" id="empty-state">Нет данных для отображения</div>
             </div>
         </div>
     </div>
 
     <script>
         const socket = io();
-        let lastId = null;
+        let lastNotificationId = null;
 
-        // Initialize Neural Mesh Background
-        function initMesh() {
-            const canvas = document.getElementById('neural-mesh');
-            const ctx = canvas.getContext('2d');
-            let w, h, particles = [];
+        const ICONS = {
+            success: '<path d="M20 6L9 17l-5-5"></path>',
+            danger: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+            warning: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>'
+        };
 
-            const resize = () => { w = canvas.width = window.innerWidth; h = canvas.height = window.innerHeight; };
-            window.addEventListener('resize', resize);
-            resize();
+        const feed = document.getElementById('history-feed');
+        const mainCard = document.getElementById('main-card');
+        const cardIcon = document.getElementById('card-icon');
+        const scoreNum = document.getElementById('score-num');
+        const statusTitle = document.getElementById('status-title');
+        const statusDesc = document.getElementById('status-desc');
+        const updateTime = document.getElementById('hist-update-time');
+        const emptyState = document.getElementById('empty-state');
 
-            for(let i=0; i<40; i++) particles.push({ x: Math.random()*w, y: Math.random()*h, vx: (Math.random()-0.5)*0.5, vy: (Math.random()-0.5)*0.5 });
-
-            function draw() {
-                ctx.clearRect(0,0,w,h);
-                ctx.fillStyle = '#8a2be2';
-                ctx.strokeStyle = 'rgba(138, 43, 226, 0.1)';
-                particles.forEach(p => {
-                    p.x += p.vx; p.y += p.vy;
-                    if(p.x < 0 || p.x > w) p.vx *= -1; if(p.y < 0 || p.y > h) p.vy *= -1;
-                    ctx.beginPath(); ctx.arc(p.x, p.y, 2, 0, Math.PI*2); ctx.fill();
-                });
-                for(let i=0; i<particles.length; i++) {
-                    for(let j=i+1; j<particles.length; j++) {
-                        let d = Math.hypot(particles[i].x-particles[j].x, particles[i].y-particles[j].y);
-                        if(d < 150) { ctx.beginPath(); ctx.moveTo(particles[i].x, particles[i].y); ctx.lineTo(particles[j].x, particles[j].y); ctx.stroke(); }
-                    }
-                }
-                requestAnimationFrame(draw);
-            }
-            draw();
+        function showToast(msg) {
+            const container = document.getElementById('toasts');
+            const el = document.createElement('div');
+            el.className = 'toast'; el.innerText = msg;
+            container.appendChild(el);
+            setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 3000);
         }
-        initMesh();
 
-        // Socket.IO State Handler
         socket.on('state_update', (state) => {
-            console.log("State Update:", state);
-            updateUI(state);
+            const onChain = state.status.on_chain;
+            const history = state.history;
+            const latestRisk = history.length > 0 ? history[0].risk_score : 0;
+            const reason = history.length > 0 ? history[0].reason : "Ожидание событий...";
+
+            // Ticker & Sync
+            document.getElementById('ticker-bal').innerText = `${onChain.agent_balance_sol} SOL`;
+            document.getElementById('ticker-bal-2').innerText = `${onChain.agent_balance_sol} SOL`;
+            if (onChain.risk_threshold) { document.getElementById('ticker-thresh').innerText = `${onChain.risk_threshold}%`; }
+            updateTime.innerText = `Обновлено: ${state.status.last_check}`;
+
+            // Main Logic
+            let type = 'success';
+            if (!onChain.connected) {
+                statusTitle.innerText = "ОШИБКА СЕТИ"; statusDesc.innerText = "Отсутствует подключение к Solana."; type = 'danger';
+            } else if (onChain.is_paused) {
+                statusTitle.innerText = "КРИТИЧЕСКИ"; statusDesc.innerText = "Критическая ошибка анализатора. Автоматическая блокировка."; type = 'danger';
+            } else if (latestRisk >= 40) {
+                statusTitle.innerText = "ОПАСНОСТЬ"; type = 'warning'; statusDesc.innerText = reason;
+            } else {
+                statusTitle.innerText = "СТАБИЛЬНО"; type = 'success'; statusDesc.innerText = reason;
+            }
+
+            // Update UI
+            scoreNum.innerText = latestRisk;
+            mainCard.className = `risk-card state-${type}`;
+            cardIcon.innerHTML = `<svg class="icon-svg" viewBox="0 0 24 24">${ICONS[type]}</svg>`;
+
+            // Buttons State
+            document.getElementById('btn-resume').classList.toggle('hidden', !onChain.is_paused);
+            document.getElementById('btn-init').classList.toggle('hidden', !onChain.account_missing);
+
+            // History Feed
+            if (history.length > 0 && emptyState) emptyState.remove();
+            
+            feed.innerHTML = history.map(h => {
+                let hType = h.risk_score >= (onChain.risk_threshold||80) ? 'danger' : (h.risk_score >= 40 ? 'warning' : 'success');
+                let link = h.tx_hash ? ` [<a href="https://solscan.io/tx/${h.tx_hash}?cluster=devnet" target="_blank" style="color:var(--danger)">Tx</a>]` : '';
+                return `
+                <div class="hist-item ${hType}">
+                    <div class="hist-icon"><svg viewBox="0 0 24 24">${ICONS[hType]}</svg></div>
+                    <div class="hist-body">
+                        <div class="hist-body-title">
+                            <span>Событие ${h.id.substring(0,4).toUpperCase()}</span>
+                            <span class="hist-body-time">${h.timestamp.split(' ')[1] || h.timestamp}</span>
+                        </div>
+                        <div class="hist-body-desc">${h.reason}${link}</div>
+                    </div>
+                    <div class="hist-val">${h.risk_score}%</div>
+                </div>`;
+            }).join('');
+
+            // Push Notifications
+            if (state.notifications.length > 0 && state.notifications[0].id !== lastNotificationId) {
+                lastNotificationId = state.notifications[0].id;
+                // Toast logic disabled to prevent visual clutter unless critical, history is enough.
+                if(state.notifications[0].title.includes("Network") || state.notifications[0].title.includes("Error")) {
+                    showToast(state.notifications[0].message);
+                }
+            }
         });
 
-        function updateUI(state) {
-            const { status, history, notifications } = state;
-            const onChain = status.on_chain;
-
-            // Basic Stats
-            document.getElementById('sol-price').innerText = `$${status.price}`;
-            document.getElementById('sol-tvl').innerText = `$${status.tvl}`;
-            document.getElementById('last-sync').innerText = `SYNCED: ${status.last_check}`;
-            document.getElementById('agent-pk').innerText = onChain.agent_pubkey;
-            document.getElementById('pause-count').innerText = onChain.pause_count;
-            document.getElementById('active-threshold').innerText = `${onChain.risk_threshold}%`;
-
-            // Gauge Update
-            const risk = history.length > 0 ? history[0].risk_score : 0;
-            const verdict = history.length > 0 ? history[0].reason : "Система в режиме ожидания...";
-            
-            document.getElementById('risk-score').innerHTML = `${risk}<span>%</span>`;
-            document.getElementById('ai-verdict').innerText = verdict;
-
-            const dashoffset = 283 - (283 * (risk / 100));
-            const fill = document.getElementById('gauge-fill');
-            fill.style.strokeDashoffset = dashoffset;
-            fill.style.stroke = risk < 40 ? 'var(--sol-green)' : (risk < 80 ? 'var(--sol-orange)' : 'var(--sol-red)');
-
-            // On-Chain Status Badge
-            const badge = document.getElementById('status-badge');
-            if (onChain.is_paused) {
-                badge.innerText = "TREASURY PAUSED";
-                badge.className = "status-badge status-danger";
-                document.getElementById('resume-btn').classList.remove('hidden');
-            } else {
-                badge.innerText = "SYSTEM ACTIVE";
-                badge.className = "status-badge status-safe";
-                document.getElementById('resume-btn').classList.add('hidden');
-            }
-
-            // Init Button Logic
-            if (onChain.account_missing) {
-                document.getElementById('init-btn').classList.remove('hidden');
-            } else {
-                document.getElementById('init-btn').classList.add('hidden');
-            }
-
-            // Audit Trail
-            const list = document.getElementById('history-list');
-            list.innerHTML = history.map(h => `
-                <div class="history-item">
-                    <div class="h-info">
-                        <div style="display:flex; justify-content:space-between;">
-                            <span class="auth-label">${h.timestamp}</span>
-                            <div class="h-score" style="color: ${h.risk_score < 40 ? 'var(--sol-green)' : (h.risk_score < 80 ? 'var(--sol-orange)' : 'var(--sol-red)')}">${h.risk_score}%</div>
-                        </div>
-                        <div class="h-reason">${h.reason}</div>
-                        ${h.tx_hash ? `<a href="https://solscan.io/tx/${h.tx_hash}?cluster=devnet" target="_blank" class="h-tx">TX: ${h.tx_hash.slice(0,16)}...</a>` : ''}
-                    </div>
-                </div>
-            `).join('');
-
-            // Notifications
-            if (notifications.length > 0 && notifications[0].id !== lastId) {
-                showToast(notifications[0].title, notifications[0].message);
-                lastId = notifications[0].id;
-            }
-        }
-
-        function showToast(title, message) {
-            const area = document.getElementById('notification-area');
-            const toast = document.createElement('div');
-            toast.className = 'toast';
-            toast.innerHTML = `
-                <div style="font-size: 24px;">🛡️</div>
-                <div>
-                    <div style="font-weight: 700; font-size: 14px;">${title}</div>
-                    <div style="font-size: 12px; color: var(--text-muted);">${message}</div>
-                </div>
-            `;
-            area.appendChild(toast);
-            setTimeout(() => { toast.style.opacity = '0'; setTimeout(() => toast.remove(), 500); }, 5000);
-        }
-
-        async function manualCheck() {
-            const btn = document.getElementById('analyze-btn');
-            btn.disabled = true; btn.innerText = 'АНАЛИЗ...';
+        async function reqAnalysis() {
+            const btn = document.getElementById('btn-audit');
+            btn.disabled = true; btn.innerText = "СКАНИРОВАНИЕ...";
             try {
                 await fetch('/api/analyze', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ news: 'Экстренный министерский запрос аудита состояния казначейства.', tvl: '1.4B', volatility: 'Medium' })
+                    body: JSON.stringify({ news: 'Принудительный запрос аудита администратором' })
                 });
-            } catch(e) { console.error(e); }
-            finally { btn.disabled = false; btn.innerText = 'ВЕРДИКТ ИИ'; }
+            } catch(e) { showToast("Network error."); }
+            finally { btn.disabled = false; btn.innerText = "ПРОВЕРИТЬ СЕЙЧАС"; }
         }
 
-        async function manageTreasury(action) {
-            const btn = event.target;
-            btn.disabled = true;
+        async function reqStatus() {
+            const btn = document.getElementById('btn-update');
+            btn.innerText = "СИНХРОНИЗАЦИЯ...";
+            try { await fetch('/api/status'); } catch(e) {}
+            setTimeout(() => { btn.innerText = "ОБНОВИТЬ СТАТУС"; }, 500);
+        }
+
+        async function manageTx(action) {
+            let btnId = action === 'resume' ? 'btn-resume' : 'btn-init';
+            const btn = document.getElementById(btnId);
+            const origText = btn.innerText;
+            btn.disabled = true; btn.innerText = "ПОДПИСЬ ТРАНЗАКЦИИ...";
             try {
                 const res = await fetch(`/api/${action}`, { method: 'POST' });
                 const data = await res.json();
-                if (data.signature) {
-                    showToast('СИСТЕМА ОБНОВЛЕНА', `Транзакция подтверждена: ${data.signature.slice(0,10)}...`);
-                }
-            } catch(e) { console.error(e); }
-            finally { btn.disabled = false; }
+                if(data.error) showToast("Blockchain Error: " + data.error);
+                else showToast("Успех.");
+            } catch(e) { showToast("ОШИБКА."); }
+            finally { btn.disabled = false; btn.innerText = origText; }
         }
     </script>
 </body>

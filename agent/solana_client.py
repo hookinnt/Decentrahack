@@ -229,27 +229,35 @@ def get_status() -> dict:
         except:
             account_missing = True
 
+        balance_sol = round(balance / 1_000_000_000, 6)
+        
         return {
             "connected": True,
             "cluster": "devnet",
             "rpc_url": SOLANA_RPC_URL,
             "solana_version": version_resp.value.solana_core,
             "agent_pubkey": str(pubkey),
-            "agent_balance_sol": round(balance / 1_000_000_000, 6),
+            "agent_balance_sol": balance_sol,
+            "balance_status": "LOW" if balance_sol < 0.01 else "OK",
             "is_paused": state.get("is_paused"),
             "risk_threshold": state.get("risk_threshold"),
             "pause_count": state.get("pause_count"),
             "last_risk_score": state.get("last_risk_score"),
-            "account_missing": account_missing
+            "account_missing": account_missing,
+            "status_message": "Account Ready" if not account_missing else "Account Missing (Initialize Required)"
         }
     except Exception as e:
-        return {"connected": False, "error": str(e)}
+        return {
+            "connected": False, 
+            "error": str(e),
+            "status_message": f"Connection Error: {str(e)[:50]}"
+        }
 
 
 # ─── Core On-Chain Logic ──────────────────────────────────────────────────────
 
-def _send_tx(instruction: Instruction, signer: Keypair) -> str | None:
-    """Helper to sign and send transactions."""
+def _send_tx(instruction: Instruction, signer: Keypair) -> tuple[str | None, str | None]:
+    """Helper to sign and send transactions. Returns (signature, error_message)."""
     try:
         recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
         msg = Message.new_with_blockhash([instruction], signer.pubkey(), recent_blockhash)
@@ -259,34 +267,36 @@ def _send_tx(instruction: Instruction, signer: Keypair) -> str | None:
             bytes(tx),
             opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
         )
-        return str(resp.value)
+        return str(resp.value), None
     except Exception as e:
-        print(f"{Fore.RED}[BLOCKCHAIN ERROR] {e}")
-        return None
+        err_msg = str(e)
+        if "AccountNotFound" in err_msg:
+            err_msg = f"Insufficient SOL or Missing Account. Raw: {err_msg[:60]}"
+        elif "0 record of a prior credit" in err_msg or "Attempt to debit" in err_msg:
+            err_msg = "Insufficient SOL: Please Fund your Wallet."
+        print(f"{Fore.RED}[BLOCKCHAIN ERROR] {err_msg}")
+        return None, err_msg
 
 
-def execute_initialize() -> str | None:
+def execute_initialize() -> tuple[str | None, str | None]:
     """Creates the Treasury PDA on Solana."""
     print(f"{Fore.CYAN}[БЛОКЧЕЙН] Инициализация аккаунта казначейства...")
     kp = load_or_create_keypair()
     authority = kp.pubkey()
     treasury_pda = get_pda_treasury(authority)
     
-    # Accounts follow lib.rs's Initialize context
     accounts = [
         AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
         AccountMeta(pubkey=authority, is_signer=True, is_writable=True),
-        AccountMeta(pubkey=Pubkey.from_string("11111111111111111111111111111111"), is_signer=False, is_writable=False), # System Program
+        AccountMeta(pubkey=Pubkey.from_string("11111111111111111111111111111111"), is_signer=False, is_writable=False), 
     ]
     
     ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_initialize_ix(), accounts)
-    sig = _send_tx(ix, kp)
-    if sig: print(f"{Fore.GREEN}[OK] Казначейство создано. Sig: {sig}")
-    return sig
+    return _send_tx(ix, kp)
 
 
-def execute_emergency_pause(reason: str, risk_score: int) -> str | None:
-    """Triggers the safe lock on-chain."""
+def execute_emergency_pause(reason: str, risk_score: int) -> tuple[str | None, str | None]:
+    """Triggers the safe lock on-chain. Returns (sig, err)."""
     print(f"\n{Fore.RED}{Style.BRIGHT}[БЛОКЧЕЙН] КРИТИЧЕСКИЙ ВЫЗОВ: Emergency Pause!")
     kp = load_or_create_keypair()
     authority = kp.pubkey()
@@ -298,13 +308,11 @@ def execute_emergency_pause(reason: str, risk_score: int) -> str | None:
     ]
 
     ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_emergency_pause_ix(risk_score, reason), accounts)
-    sig = _send_tx(ix, kp)
-    if sig: print(f"{Fore.GREEN}[OK] Казначейство ЗАБЛОКИРОВАНО. Sig: {sig}")
-    return sig
+    return _send_tx(ix, kp)
 
 
-def execute_resume() -> str | None:
-    """Unlocks the treasury on-chain."""
+def execute_resume() -> tuple[str | None, str | None]:
+    """Unlocks the treasury on-chain. Returns (sig, err)."""
     print(f"{Fore.GREEN}[БЛОКЧЕЙН] Восстановление системы: Resume...")
     kp = load_or_create_keypair()
     authority = kp.pubkey()
@@ -316,13 +324,11 @@ def execute_resume() -> str | None:
     ]
 
     ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_resume_ix(), accounts)
-    sig = _send_tx(ix, kp)
-    if sig: print(f"{Fore.GREEN}[OK] Казначейство РАЗБЛОКИРОВАНО. Sig: {sig}")
-    return sig
+    return _send_tx(ix, kp)
 
 
-def execute_threshold_update(new_threshold: int) -> str | None:
-    """Updates dynamic risk sensitivity (DARS)."""
+def execute_threshold_update(new_threshold: int) -> tuple[str | None, str | None]:
+    """Updates dynamic risk sensitivity (DARS). Returns (sig, err)."""
     print(f"\n{Fore.YELLOW}[КОНФИГ] DARS: Изменение порога на {new_threshold}/100...")
     kp = load_or_create_keypair()
     authority = kp.pubkey()
@@ -334,6 +340,4 @@ def execute_threshold_update(new_threshold: int) -> str | None:
     ]
 
     ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_update_threshold_ix(new_threshold), accounts)
-    sig = _send_tx(ix, kp)
-    if sig: print(f"{Fore.GREEN}[OK] Порог обновлен. Sig: {sig}")
-    return sig
+    return _send_tx(ix, kp)

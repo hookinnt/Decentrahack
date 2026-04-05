@@ -1,110 +1,42 @@
-[![Deploy to Render](https://render.com/images/deploy-to-render-button.svg)](https://render.com/deploy?repo=https://github.com/hookinnt/Decentrahack)
-[![Deploy to HF](https://huggingface.co/datasets/huggingface/badges/resolve/main/deploy-to-spaces-lg.svg)](https://huggingface.co/new-space?template=hookinnt/Decentrahack)
+# Solana Autonomous Risk Manager
 
-> **A professional-grade, autonomous security layer specifically engineered to protect Solana protocols from exploits, market shocks, and social engineering via on-chain AI intervention.**
+**Solana Risk Manager** — это полностью автономный ИИ-агент, предназначенный для защиты казначейств DeFi-протоколов и смарт-контрактов в сети Solana. 
+Проект разработан в рамках хакатона/олимпиады и воплощает в себе концепцию "Активной безопасности", где всем анализом и принятием решений руководит **Искусственный Интеллект**, а не человек.
 
-[![License: MIT](https://img.shields.io/badge/License-MIT-purple.svg)](https://opensource.org/licenses/MIT)
-[![Network: Devnet](https://img.shields.io/badge/Network-Devnet-14F195.svg)](https://solscan.io/?cluster=devnet)
-[![AI Architecture: Gemini 2.5](https://img.shields.io/badge/AI-Gemini_2.5_Flash-00c2ff.svg)](https://deepmind.google/technologies/gemini/)
-[![Dashboard: PWA Ready](https://img.shields.io/badge/Dashboard-PWA_Responsive-white.svg)](#-mobile-installation)
+## 🧠 Ключевые идеи и ТЗ проекта
 
----
-
-## 🌊 The "Autonomous Organism" Concept
-Unlike static security scripts, the **AI Risk Organism (v1.5)** acts as a living immune system for the treasury. It doesn't just alert; it **observes, interprets, and intervenes** in real-time, executing defense transactions on the Solana blockchain faster than any human operator.
-
-### 🏛️ Gov-Grade Key Features
-- **DARS (Dynamic Autonomous Risk Sensitivity)**: The AI automatically updates the on-chain contract's risk threshold in response to market volatility.
-- **Autonomous Recovery**: If the network environment stabilizes for 5+ minutes, the Organism automatically calls `resume` to unlock liquidity.
-- **BORSCH State Decoding**: Direct binary parsing of the 48-byte `TreasuryState` PDA ensures the dashboard displays the **ground truth** from the blockchain.
-- **Real-Time Synchronization**: Powered by `SocketIO`, the system broadcasts every "thought" and "action" instantly to the Master Dashboard and Mobile App.
+Система полностью базируется на наших изначальных архитектурных идеях и Техническом Задании:
+1. **ИИ как Главный Аудитор**: Сердцем проекта является интеграция с API `Gemini`. Система непрерывно "читает" рыночный контекст: новости, метрики TVL, объемы торгов и активность эксплойтов.
+2. **Нулевой человеческий фактор (Автономность)**: ИИ работает в фоновом режиме в виде сервиса-«Организма». Если он фиксирует аномалию (например, взлом соседнего моста или атаку на смарт-контракт), он *самостоятельно* подписывает и отправляет спасительную транзакцию в смарт-контракт Solana (`Emergency Pause`) для мгновенной заморозки активов.
+3. **Технология DARS (Dynamic Autonomous Risk Sensitivity)**: Чувствительность системы динамична. Если ИИ видит повышенную рыночную угрозу, он автоматически снижает порог срабатывания.
+4. **Сверхчистый корпоративный UI**: Никаких интерфейсов чат-ботов. Это серьезный дашборд формата панелей Bloomberg или Vercel, отражающий живые выводы нейросети в лаконичной, строгой финансовой инфографике.
 
 ---
 
-## 🏗 System Architecture (WebSockets & On-Chain Sync)
+## 📂 Структура Проекта (ДЕМКА vs РЕАЛЬНОСТЬ)
 
-```mermaid
-graph TD
-    A["Market News & SOL Price"] --> B["AI Risk Organism (Gemini)"]
-    B --> C{"Risk Audit"}
-    C -- "Risk > Threshold" --> D["On-Chain Emergency Pause"]
-    C -- "Volatile Market" --> E["DARS: Update On-Chain Threshold"]
-    C -- "Safe Streak (5m)" --> F["Autonomous Recovery (Resume)"]
-    
-    D --> G["Anchor Smart Contract"]
-    E --> G
-    F --> G
-    
-    G -- "State Update" --> H["BORSCH Decoder (agent)"]
-    H --> I["SocketIO Broadcast"]
-    I --> J["Master Dashboard / Mobile App"]
-```
+Проект разделен на две части для идеальной защиты перед судьями.
+
+### 🌟 1. Презентационная "Демка" (Для питча)
+* **Где находится:** Папка `demo/` (файл `demo/index.html`)
+* **Как запустить:** Просто откройте `index.html` двумя кликами в любом браузере, или запустите через локальный сервер (например, python `http.server`).
+* **Что это такое:** Это **100% безопасная и безотказная симуляция**. В ней заложен идеальный театральный скрипт, демонстрирующий автономную работу системы. ИИ будет сам генерировать случайные события, пока не уловит "Критическую ошибку" и не перехватит контроль.
+* Идеально подходит для видео-презентации или показа "сцены" работы без риска того, что публичная сеть Solana Devnet "ляжет" в ответственный момент.
+
+### ⚡ 2. Реальное приложение (Боевой бэкенд)
+* **Где находится:** Корень проекта (файл `app.py`, папки `agent/` и `templates/`)
+* **Как запустить:** Выполнить скрипт `run.bat` (запускает Flask-сервер и WebSockets).
+* **Что это такое:** Это **настоящий, честный рабочий проект**. Он требует наличия токенов SOL в кошельке Devnet, так как он делает настоящие запросы к смарт-контракту. 
+* Внутри крутится `BackgroundMonitor`, который раз в 15 секунд обращается к настоящей нейросети (Gemini API) и спрашивает: "Вот текущие новости с рынка. Есть ли угроза? Подписывать ли транзакцию блокировки?". 
+* Если Gemini возвращает высокий индекс опасности, бэкенд формирует Anchor Payload и реально исполняет on-chain команду `treasury_pause`.
 
 ---
 
-## 📱 Mobile Installation (PWA)
-This project is engineered to work as a real phone application for government/institutional protocol managers.
+## 🛠 Технический Стек
+- **Смарт-Контракт:** Solana (Anchor, PDA-авторизация, Devnet).
+- **ИИ / Нейросеть:** Google Generative AI (модель `gemini-3-flash`).
+- **Бэкенд:** Python, Flask, Flask-SocketIO.
+- **Интеграция с сетью:** `solana.rpc` и `solders` (генерация инструкций).
+- **Фронтенд:** Чистый HTML/CSS, Vanilla JS, Responsive Grid. Без тяжелых фреймворков.
 
-1. **Access**: Open the dashboard URL in Chrome (Android) or Safari (iOS).
-2. **Install**: Select **"Add to Home Screen"**.
-3. **Launch**: Use it as a full-screen, native-like experience with persistent sessions and real-time alerts.
-
----
-
-## 🛠 Tech Stack
-| Tier | Technology |
-|---|---|
-| **Blockchain** | Solana / Anchor (Rust) |
-| **BORSCH Decoder** | Python `solders` & `struct` |
-| **Logic Layer** | Python 3.10 / Eventlet |
-| **Real-Time** | Flask-SocketIO (WebSockets) |
-| **Mobile** | Responsive HTML5 / PWA / Canvas |
-
----
-
-## 📁 Project Structure (Cleaned for Production)
-```bash
-├── contracts/               # [SMART CONTRACT] Anchor Program (lib.rs)
-├── agent/                   # [LOGIC] Autonomous AI Intelligence
-│   ├── analyzer.py          # AI Risk Expert Persona
-│   ├── solana_client.py     # Real-time On-chain Sync & Binary Bridge
-│   ├── monitor.py           # The "Heartbeat" Loop (DARS & Recovery)
-│   ├── news_engine.py       # Global Security Feed (Mock)
-│   └── models.py            # Data Schemas
-├── static/                  # [ASSETS] PWA Manifest & Icons
-├── templates/               # [UI] Responsive Master Dashboard
-├── app.py                   # Master Autonomous Bridge & SocketIO Server
-├── requirements.txt         # Production Dependencies
-└── run.bat                  # One-Click System Startup
-```
-
----
-
-## 🚀 Cloud Deployment Guide (24/7 Persistent)
-
-To ensure your "AI Risk Organism" never stops monitoring the Solana blockchain, follow these steps to host it in the cloud.
-
-### Option A: HuggingFace Spaces (Recommended - Free 24/7)
-1. **Fork** this repository to your GitHub account.
-2. Go to [huggingface.co/new-space](https://huggingface.co/new-space).
-3. Select **Docker** as the SDK.
-4. Choose **"Import from GitHub"** and select your fork.
-5. **CRITICAL**: Go to **Settings > Variables and Secrets**.
-   - Add a **New Secret**: `GEMINI_API_KEY` = *`your_key_here`*.
-6. Done! Your Master Dashboard will be live at `https://huggingface.co/spaces/your-name/repo-name`.
-
-### Option B: Render.com
-1. **Connect** your GitHub repo to Render.
-2. Select **Web Service**.
-3. Render will automatically detect `render.yaml` and configure everything.
-4. Add `GEMINI_API_KEY` to the **Environment Variables** tab in the Render Dashboard.
-
----
-
-## 🔐 Security & "Gov-Grade" Architecture
-- **No Private Keys in Code**: The agent uses environment variables for all sensitive data.
-- **Stateless Execution**: Each AI intervention is verified against the on-chain PDA state, making the system resilient to server restarts.
-- **Audit Logging**: Every on-chain event is immutable and verifiable via the Dashboard's Solscan links.
-
----
-*Developed for hookinnt/Decentrahack — Case 2 Master Submission (v1.5).*
+Вся архитектура, идеи и ИИ-анализ реализованы строго в соответствии с целевой задумкой проекта.

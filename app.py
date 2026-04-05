@@ -5,7 +5,7 @@ warnings.filterwarnings('ignore')
 
 from flask import Flask, request, jsonify, render_template
 from flask_socketio import SocketIO, emit
-from agent.analyzer import AIAnalyzer
+from agent.analyzer import RiskAuditor
 from agent.models import NewsItem
 from agent.monitor import BackgroundMonitor
 from agent.solana_client import (
@@ -28,10 +28,10 @@ socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 # ─── Startup: Solana is required ──────────────────────────────────────────────
 verify_solana_or_crash()
 
-# One shared AI analyzer instance
-analyzer = AIAnalyzer()
+# One shared risk analyzer instance
+analyzer = RiskAuditor()
 
-# Initialize and start the Autonomous Background Monitor ('Organism')
+# Initialize and start the Background Monitor
 def on_monitor_update(state):
     """Callback for real-time state broadcast."""
     socketio.emit('state_update', state)
@@ -81,7 +81,7 @@ def analyze():
     )
 
     try:
-        assessment = analyzer.analyze_news(news)
+        assessment = analyzer.process_event(news)
 
         response_data = assessment.dict()
 
@@ -98,9 +98,11 @@ def analyze():
         # Send emergency transaction if risk is high
         active_threshold = assessment.recommended_threshold or 80
         if assessment.action_required and assessment.risk_score >= active_threshold:
-            tx_hash = execute_emergency_pause(assessment.reason, assessment.risk_score)
+            tx_hash, tx_err = execute_emergency_pause(assessment.reason, assessment.risk_score)
             if tx_hash:
                 response_data["tx_hash"] = tx_hash
+            if tx_err:
+                response_data["error"] = tx_err
 
         return jsonify(response_data)
 
@@ -111,22 +113,37 @@ def analyze():
 @app.route('/api/initialize', methods=['POST'])
 def api_initialize():
     """Manual on-chain initialization."""
-    sig = execute_initialize()
-    return jsonify({"signature": sig})
+    sig, err = execute_initialize()
+    return jsonify({"signature": sig, "error": err})
 
 
 @app.route('/api/resume', methods=['POST'])
 def api_resume():
     """Manual on-chain resume."""
-    sig = execute_resume()
-    return jsonify({"signature": sig})
+    sig, err = execute_resume()
+    return jsonify({"signature": sig, "error": err})
+
+
+@app.route('/api/threshold', methods=['POST'])
+def api_threshold():
+    """Manual DARS threshold update via slider."""
+    data = request.json
+    val = data.get('threshold') if data else None
+    if val is None:
+        return jsonify({"error": "No threshold value provided"}), 400
+    try:
+        val = int(val)
+        sig, err = execute_threshold_update(val)
+        return jsonify({"signature": sig, "error": err})
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 # ─── Entry Point ──────────────────────────────────────────────────────────────
 
 if __name__ == '__main__':
     print("\n" + "=" * 56)
-    print("   SOLANA AI RISK ORGANISM — Dashboard")
+    print("   SOLANA RISK MANAGER — Dashboard")
     print("   Status: Background Monitoring ACTIVE (WebSockets ENABLED)")
     print("=" * 56)
     print("=> http://127.0.0.1:5000\n")

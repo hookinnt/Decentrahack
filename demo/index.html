@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>Risk Manager / Autonoma</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg-color: #0b0c10;
+            --card-bg: #111115;
+            --card-border: #222228;
+            --text-main: #f0f0f2;
+            --text-muted: #80808a;
+            --danger: #ff3b30;
+            --success: #34c759;
+            --warning: #ffcc00;
+        }
+
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        
+        body {
+            font-family: 'Inter', -apple-system, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+            overflow-x: hidden;
+        }
+
+        /* --- Marquee --- */
+        .marquee {
+            width: 100%; background: #000; border-bottom: 1px solid var(--card-border);
+            color: var(--text-muted); font-size: 13px; font-weight: 500; letter-spacing: 1px;
+            padding: 8px 0; overflow: hidden; white-space: nowrap; position: relative;
+        }
+        .marquee-content {
+            display: inline-block;
+            animation: marquee 30s linear infinite;
+        }
+        .marquee-content span { margin-right: 40px; color: #a1a1aa; }
+        .marquee-content span b { color: var(--text-main); }
+        .marquee-content span.up { color: var(--success); }
+        .marquee-content span.down { color: var(--danger); }
+        
+        @keyframes marquee { 0% { transform: translateX(100vw); } 100% { transform: translateX(-100%); } }
+
+        /* --- Layout --- */
+        .wrapper {
+            margin: 0 auto; width: 100%; max-width: 1200px; padding: 24px 16px;
+            display: flex; flex-direction: column; gap: 32px; flex: 1; align-items: center;
+        }
+
+        @media(min-width: 1024px) {
+            .wrapper {
+                flex-direction: row; align-items: flex-start; justify-content: center;
+                gap: 48px; padding-top: 64px;
+            }
+            .left-col { width: 420px; flex-shrink: 0; }
+            .right-col { width: 500px; flex-shrink: 0; }
+        }
+        @media(max-width: 1023px) {
+            .left-col, .right-col { width: 100%; max-width: 450px; }
+        }
+
+        /* --- Main Card --- */
+        .risk-card {
+            background: var(--card-bg);
+            border: 1px solid var(--card-border);
+            border-radius: 24px;
+            padding: 40px 24px;
+            text-align: center;
+            box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+            position: relative;
+            overflow: hidden;
+        }
+        /* Subtle glow inside card based on state */
+        .risk-card::before {
+            content: ''; position: absolute; inset: 0; opacity: 0.05; transition: background 1s; pointer-events: none;
+        }
+        .risk-card.state-danger::before { background: radial-gradient(circle at top, var(--danger) 0%, transparent 60%); }
+        .risk-card.state-success::before { background: radial-gradient(circle at top, var(--success) 0%, transparent 60%); }
+
+        /* --- Status Icon --- */
+        .icon-wrapper {
+            width: 72px; height: 72px; margin: 0 auto 24px;
+            border-radius: 50%; display: flex; align-items: center; justify-content: center;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: all 0.5s;
+        }
+        .state-danger .icon-wrapper { border-color: rgba(255,59,48,0.3); background: rgba(255,59,48,0.05); }
+        .state-success .icon-wrapper { border-color: rgba(52,199,89,0.3); background: rgba(52,199,89,0.05); }
+        .icon-svg { width: 32px; height: 32px; stroke-width: 1.5; fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+        .state-danger .icon-svg { stroke: var(--danger); }
+        .state-success .icon-svg { stroke: var(--success); }
+
+        /* --- Typography --- */
+        .status-text {
+            font-size: 14px; font-weight: 700; letter-spacing: 2.5px; margin-bottom: 12px;
+            transition: color 0.5s; text-transform: uppercase;
+        }
+        .state-danger .status-text { color: var(--danger); }
+        .state-success .status-text { color: var(--success); }
+
+        .score-value {
+            font-size: 80px; font-weight: 800; line-height: 1; margin-bottom: 24px; letter-spacing: -2px;
+            display: flex; justify-content: center; align-items: baseline;
+        }
+        .score-percent { font-size: 24px; font-weight: 600; color: var(--text-muted); margin-left: 4px; letter-spacing: 0; }
+
+        .score-label {
+            font-size: 11px; font-weight: 600; letter-spacing: 1.5px; color: var(--text-muted);
+            text-transform: uppercase; margin-bottom: 16px;
+        }
+        .score-desc {
+            font-size: 13px; color: #66666e; line-height: 1.5; font-weight: 400;
+        }
+
+        /* --- Actions --- */
+        .actions { margin-top: 24px; display: flex; flex-direction: column; gap: 12px; }
+        .btn {
+            width: 100%; border-radius: 9999px; font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 700;
+            padding: 18px 24px; cursor: pointer; transition: all 0.2s; border: none; letter-spacing: 0.5px; text-transform: uppercase;
+        }
+        .btn-primary { background: #fff; color: #000; box-shadow: 0 4px 12px rgba(255,255,255,0.1); }
+        .btn-primary:active { transform: scale(0.98); background: #e0e0e0; }
+        .btn-secondary { background: #16161a; color: #fff; border: 1px solid var(--card-border); }
+        .btn-secondary:hover { background: #1f1f24; border-color: #333; }
+        .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+        
+        .btn-unlock { background: transparent; border: 1px solid var(--danger); color: var(--danger); margin-top: 12px; display: none; }
+        .state-danger .btn-unlock { display: block; }
+        .btn-unlock:hover { background: rgba(255,59,48,0.1); }
+
+        /* --- History Section --- */
+        .history-header {
+            display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;
+        }
+        .hist-title { font-size: 12px; font-weight: 700; letter-spacing: 1.5px; color: var(--text-muted); text-transform: uppercase; }
+        .hist-time { font-size: 11px; font-weight: 500; color: #555; }
+        
+        .timeline { display: flex; flex-direction: column; gap: 12px; }
+        .hist-item {
+            background: rgba(255,255,255,0.02); border: 1px solid rgba(255,255,255,0.05); padding: 16px;
+            border-radius: 12px; display: flex; gap: 16px; align-items: center; transition: background 0.3s;
+        }
+        
+        .hist-icon {
+            width: 40px; height: 40px; border-radius: 10px; background: rgba(0,0,0,0.5); display: flex;
+            align-items: center; justify-content: center; flex-shrink: 0; border: 1px solid;
+        }
+        .hist-item.danger .hist-icon { border-color: rgba(255,59,48,0.2); color: var(--danger); }
+        .hist-item.success .hist-icon { border-color: rgba(52,199,89,0.2); color: var(--success); }
+        .hist-item.warning .hist-icon { border-color: rgba(255,204,0,0.2); color: var(--warning); }
+        .hist-icon svg { width: 18px; height: 18px; stroke-width: 2; fill: none; stroke: currentColor; }
+
+        .hist-body { flex: 1; }
+        .hist-body-title { font-family: 'Inter', sans-serif; font-size: 14px; font-weight: 600; color: var(--text-main); margin-bottom: 4px; display: flex; justify-content: space-between; }
+        .hist-body-time { font-size: 11px; color: var(--text-muted); font-weight: 400; }
+        .hist-body-desc { font-size: 12px; color: #777; line-height: 1.4; font-weight: 500; }
+        
+        .hist-val { font-size: 15px; font-weight: 700; }
+        .hist-item.danger .hist-val { color: var(--danger); }
+        .hist-item.success .hist-val { color: var(--success); }
+        .hist-item.warning .hist-val { color: var(--warning); }
+
+    </style>
+</head>
+<body>
+
+    <div class="marquee">
+        <div class="marquee-content">
+            <span>● <b>SOL/USDT</b> $145.20 <span class="up">(+2.4%)</span></span>
+            <span>● <b>TPS Solana:</b> 2,642</span>
+            <span>● <b>Wormhole Bridge:</b> Operational</span>
+            <span>● <b>Raydium Pools:</b> Standard Volatility</span>
+            <span>● <b>Jito MEV:</b> Active</span>
+            <span>● <b>Jupiter Aggregator:</b> Routing OK</span>
+            <span>● <b>SOL/USDT</b> $145.20 <span class="up">(+2.4%)</span></span>
+            <span>● <b>TPS Solana:</b> 2,642</span>
+            <span>● <b>Wormhole Bridge:</b> Operational</span>
+        </div>
+    </div>
+
+    <div class="wrapper">
+        <!-- Main Card Column -->
+        <div class="left-col">
+            <div class="risk-card state-success" id="main-card">
+                <div class="icon-wrapper" id="card-icon">
+                    <svg class="icon-svg" viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>
+                </div>
+                
+                <div class="status-text" id="status-title">СТАБИЛЬНО</div>
+                
+                <div class="score-value">
+                    <span id="score-num">0</span><span class="score-percent">%</span>
+                </div>
+                
+                <div class="score-label">ВЕРОЯТНОСТЬ УГРОЗЫ</div>
+                <div class="score-desc" id="status-desc">
+                    Система работает в штатном режиме. Аномалий баланса или транзакций не зафиксировано.
+                </div>
+            </div>
+
+            <div class="actions">
+                <button class="btn btn-primary" onclick="triggerManualAudit()" id="btn-audit">ПРОВЕРИТЬ СЕЙЧАС</button>
+                <button class="btn btn-secondary" onclick="updateNavStatus()" id="btn-update">ОБНОВИТЬ СТАТУС</button>
+                <button class="btn btn-unlock" onclick="unlockTreasury()" id="btn-unlock">РАЗБЛОКИРОВАТЬ СРЕДСТВА</button>
+            </div>
+        </div>
+
+        <!-- History Column -->
+        <div class="right-col">
+            <div class="history-header">
+                <div class="hist-title">ИСТОРИЯ АНАЛИЗА</div>
+                <div class="hist-time" id="hist-update-time">Обновлено: СЕЙЧАС</div>
+            </div>
+            
+            <div class="timeline" id="history-feed">
+                <!-- Items will be injected here -->
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const ICONS = {
+            success: '<path d="M20 6L9 17l-5-5"></path>',
+            danger: '<line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+            warning: '<path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"></path><line x1="12" y1="9" x2="12" y2="13"></line><line x1="12" y1="17" x2="12.01" y2="17"></line>'
+        };
+
+        const feed = document.getElementById('history-feed');
+        const mainCard = document.getElementById('main-card');
+        const cardIcon = document.getElementById('card-icon');
+        const scoreNum = document.getElementById('score-num');
+        const statusTitle = document.getElementById('status-title');
+        const statusDesc = document.getElementById('status-desc');
+        const updateTime = document.getElementById('hist-update-time');
+
+        let isPaused = false;
+
+        function getFormattedTime() {
+            const d = new Date();
+            return d.toTimeString().split(' ')[0];
+        }
+
+        // Add history item
+        function addHistory(title, desc, score, type) {
+            const time = getFormattedTime();
+            updateTime.innerText = `Обновлено: ${time}`;
+            
+            const el = document.createElement('div');
+            el.className = `hist-item ${type}`;
+            el.innerHTML = `
+                <div class="hist-icon"><svg viewBox="0 0 24 24">${ICONS[type]}</svg></div>
+                <div class="hist-body">
+                    <div class="hist-body-title">
+                        <span>${title}</span>
+                        <span class="hist-body-time">${time}</span>
+                    </div>
+                    <div class="hist-body-desc">${desc}</div>
+                </div>
+                <div class="hist-val">${score}%</div>
+            `;
+            
+            feed.insertBefore(el, feed.firstChild);
+            if(feed.children.length > 5) feed.removeChild(feed.lastChild);
+        }
+
+        // Update Main Card
+        function setMainState(score, type, descText) {
+            scoreNum.innerText = score;
+            statusDesc.innerText = descText;
+            
+            mainCard.className = `risk-card state-${type}`;
+            cardIcon.innerHTML = `<svg class="icon-svg" viewBox="0 0 24 24">${ICONS[type]}</svg>`;
+            
+            if(type === 'danger') {
+                statusTitle.innerText = 'КРИТИЧЕСКИ';
+                isPaused = true;
+            } else if (type === 'warning') {
+                statusTitle.innerText = 'ОПАСНОСТЬ';
+            } else {
+                statusTitle.innerText = 'БЕЗОПАСНО';
+                isPaused = false;
+            }
+        }
+
+        // --- Demo Automations ---
+        const wait = ms => new Promise(r => setTimeout(r, ms));
+
+        async function triggerManualAudit() {
+            if(isPaused) return; // Locked
+            const btn = document.getElementById('btn-audit');
+            btn.innerText = "СКАНИРОВАНИЕ...";
+            btn.disabled = true;
+            
+            addHistory("Ручной Аудит", "Запущен принудительный сбор метрик сети и оракулов.", 0, "success");
+            await wait(1500);
+            
+            addHistory("Аудит Завершен", "Угроз не обнаружено. Казначейство в безопасности.", 12, "success");
+            setMainState(12, 'success', "Последняя проверка подтвердила стабильность. Риски минимальны.");
+            
+            btn.innerText = "ПРОВЕРИТЬ СЕЙЧАС";
+            btn.disabled = false;
+        }
+
+        function updateNavStatus() {
+            const btn = document.getElementById('btn-update');
+            btn.innerText = "СИНХРОНИЗАЦИЯ...";
+            setTimeout(() => { btn.innerText = "ОБНОВИТЬ СТАТУС"; updateTime.innerText = `Обновлено: ${getFormattedTime()}`; }, 800);
+        }
+
+        function unlockTreasury() {
+            isPaused = false;
+            setMainState(0, 'success', "Система переведена в ручной режим сброса рисков.");
+            addHistory("Снятие Блокировки", "Отправлена TX на вызов resume(). Казначейство разморожено.", 0, "success");
+        }
+
+        // Background Events Simulation
+        async function runBackgroundMocap() {
+            addHistory("Сканирование Сети", "Агенты ИИ активно мониторят транзакции в реальном времени.", 0, "success");
+            
+            await wait(3000);
+            addHistory("Аномальная Транзакция", "Зафиксирован подозрительный вызов контракта через мост Wormhole.", 45, "warning");
+            setMainState(45, 'warning', "Внимание: Обнаружена попытка внедрения постороннего payload'а. DARS снижает порог блокировки.");
+
+            await wait(4000);
+            // Critical Incident
+            setMainState(98, 'danger', "КРИТИЧЕСКАЯ УГРОЗА. Автоматическая блокировка казначейства (Emergency Pause) успешно выполнена.");
+            addHistory("Эксплойт Предотвращен", "Транзакция нарушителя заблокирована он-чейн. Средства находятся в безопасности.", 98, "danger");
+        }
+
+        // Start 
+        setTimeout(runBackgroundMocap, 1500);
+
+    </script>
+</body>
+</html>
