@@ -136,12 +136,35 @@ def _decode_treasury_state(data: bytes) -> dict:
 # ─── Keypair Management ───────────────────────────────────────────────────────
 
 def _load_keypair() -> Keypair:
-    """Load keypair from disk. Generate and save a new one if not found."""
+    # 1. Direct Private Key (Base58)
+    pk_env = os.getenv("SOLANA_PRIVATE_KEY")
+    if pk_env:
+        try:
+            return Keypair.from_base58_string(pk_env)
+        except Exception:
+            try:
+                # Handle potential JSON formatted secret key in env
+                secret = json.loads(pk_env)
+                return Keypair.from_bytes(bytes(secret))
+            except Exception:
+                pass
+
+    # 2. Keypair Path
+    path_env = os.getenv("SOLANA_KEYPAIR_PATH")
+    if path_env:
+        kp_path = Path(path_env)
+        if kp_path.exists():
+            with open(kp_path, "r") as f:
+                secret = json.load(f)
+            return Keypair.from_bytes(bytes(secret))
+
+    # 3. Default Local File
     if KEYPAIR_FILE.exists():
         with open(KEYPAIR_FILE, "r") as f:
             secret = json.load(f)
         return Keypair.from_bytes(bytes(secret))
 
+    # 4. Generate New
     print(f"{Fore.YELLOW}[Keypair] Generating new agent keypair...")
     kp = Keypair()
     KEYPAIR_FILE.parent.mkdir(parents=True, exist_ok=True)
