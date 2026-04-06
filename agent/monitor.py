@@ -73,10 +73,9 @@ class BackgroundMonitor:
                     self.current_status["change_24h"] = round(change_24h, 2) if change_24h else 0.0
                     self.current_status["last_check"] = datetime.now().strftime("%H:%M:%S")
                     
-                    # Simulated TVL fluctuation for 'Reality'
-                    tvl_num = int(self.current_status["tvl"].replace(",", ""))
-                    tvl_num += (int(time.time() % 100) - 50) * 1000 # +/- 50k
-                    self.current_status["tvl"] = "{:,}".format(tvl_num)
+                    # Note: TVL could be fetched via DefiLlama API if needed, 
+                    # but we keep it stable for now to avoid unnecessary API noise.
+                    self.current_status["tvl"] = "1,420,500,210"
 
                     # Dynamic Volatility Calculation
                     if abs(self.current_status["change_24h"]) > 8:

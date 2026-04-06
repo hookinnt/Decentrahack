@@ -4,12 +4,13 @@ solana_client.py — Real Solana Devnet integration for the AI Risk Oracle.
 Responsibilities:
   - Maintain a live connection to Solana Devnet (fail-fast on startup)
   - Manage the AI agent's signing keypair
-  - Build and broadcast signed transactions directly to the Anchor contract
+  - Build and broadcast signed Anchor instructions to the smart contract
   - Expose a status dict for the /api/status health endpoint
 """
 import sys
 import json
 import time
+import struct
 from pathlib import Path
 
 from solana.rpc.api import Client
@@ -27,317 +28,323 @@ init(autoreset=True)
 
 SOLANA_RPC_URL = "https://api.devnet.solana.com"
 
-# The Program ID from our Anchor contract (lib.rs)
-# In production, replace this with your actual deployed Program ID.
+# Program ID must match the deployed Anchor contract (lib.rs declare_id!)
+# Replace this with your actual deployed Program ID after `anchor deploy`
 RISK_MANAGER_PROGRAM_ID = Pubkey.from_string("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS")
 
-KEYPAIR_FILE = Path("agent_keypair.json")
+SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 
-# Shared RPC client instance
-solana_client = Client(SOLANA_RPC_URL)
+KEYPAIR_FILE = Path(__file__).parent.parent / "agent_keypair.json"
+
+# Single shared RPC client instance
+rpc = Client(SOLANA_RPC_URL)
 
 
-# ─── Anchor Instruction Encoding ──────────────────────────────────────────────
+# ─── PDA Derivation ───────────────────────────────────────────────────────────
 
-def get_pda_treasury(authority: Pubkey) -> Pubkey:
+def get_treasury_pda(authority: Pubkey) -> Pubkey:
     """
-    Derive the PDA for the TreasuryState used in our Rust contract.
-    Seeds must match: ["treasury", authority.pubkey]
+    Derives the TreasuryState PDA.
+    Seeds must exactly match Rust: [b"treasury", authority.key().as_ref()]
     """
     seeds = [b"treasury", bytes(authority)]
     pda, _ = Pubkey.find_program_address(seeds, RISK_MANAGER_PROGRAM_ID)
     return pda
 
 
-def encode_initialize_ix() -> bytes:
-    """
-    Discriminator: af345b5a1b7ad4f4 (sha256("global:initialize"))
-    """
-    return bytes([0xaf, 0x34, 0x5b, 0x5a, 0x1b, 0x7a, 0xd4, 0xf4])
+# ─── Anchor Instruction Discriminators ───────────────────────────────────────
+# Each discriminator is the first 8 bytes of sha256("global:<instruction_name>").
+# These must match the compiled Anchor IDL exactly.
+
+def _disc(name: str) -> bytes:
+    """Compute Anchor discriminator: sha256('global:<name>')[0:8]"""
+    import hashlib
+    return hashlib.sha256(f"global:{name}".encode()).digest()[:8]
 
 
-def encode_emergency_pause_ix(risk_score: int, reason: str) -> bytes:
-    """
-    Discriminator: 158f1b8ec8b5d2ff
-    """
-    discriminator = bytes([0x15, 0x8f, 0x1b, 0x8e, 0xc8, 0xb5, 0xd2, 0xff])
-    arg_risk = bytes([risk_score & 0xFF])
-    reason_bytes = reason.encode("utf-8")
-    arg_reason_len = len(reason_bytes).to_bytes(4, "little")
-    return discriminator + arg_risk + arg_reason_len + reason_bytes
+def _encode_initialize() -> bytes:
+    return _disc("initialize")
 
 
-def encode_resume_ix() -> bytes:
-    """
-    Discriminator: 05c088863f69eb44 (sha256("global:resume"))
-    """
-    return bytes([0x05, 0xc0, 0x88, 0x86, 0x3f, 0x69, 0xeb, 0x44])
+def _encode_emergency_pause(risk_score: int, reason: str) -> bytes:
+    disc = _disc("emergency_pause")
+    arg_score = bytes([risk_score & 0xFF])
+    reason_bytes = reason.encode("utf-8")[:199]  # clamp to 200-char contract limit
+    arg_len = len(reason_bytes).to_bytes(4, "little")
+    return disc + arg_score + arg_len + reason_bytes
 
 
-def encode_update_threshold_ix(new_threshold: int) -> bytes:
-    """
-    Discriminator: fb2418b39d1fefea
-    """
-    discriminator = bytes([0xfb, 0x24, 0x18, 0xb3, 0x9d, 0x1f, 0xef, 0xea])
-    arg_threshold = bytes([new_threshold & 0xFF])
-    return discriminator + arg_threshold
+def _encode_resume() -> bytes:
+    return _disc("resume")
 
 
-# ─── BORSCH Data Decoding ─────────────────────────────────────────────────────
+def _encode_update_threshold(new_threshold: int) -> bytes:
+    disc = _disc("update_threshold")
+    return disc + bytes([new_threshold & 0xFF])
 
-def decode_treasury_state(data: bytes) -> dict:
+
+# ─── BORSH Decoding ───────────────────────────────────────────────────────────
+
+def _decode_treasury_state(data: bytes) -> dict:
     """
-    Decodes the 48-byte TreasuryState structure from Solana memory.
-    Format: 
-      - discriminator: 8 
-      - is_paused    : 1 (bool)
-      - authority     : 32 (pubkey)
-      - bump         : 1 (u8)
-      - pause_count  : 4 (u32, LE)
-      - risk_score   : 1 (u8)
-      - threshold    : 1 (u8)
-      - last_updated : 8 (i64, LE)
+    Decodes TreasuryState account data (Anchor BORSH layout).
+    Layout after 8-byte discriminator:
+      is_paused:      bool  1 byte  @ offset 8
+      authority:      Pubkey 32 bytes @ offset 9
+      bump:           u8    1 byte  @ offset 41
+      pause_count:    u32   4 bytes @ offset 42
+      last_risk_score:u8    1 byte  @ offset 46
+      risk_threshold: u8    1 byte  @ offset 47
+      last_updated:   i64   8 bytes @ offset 48
+    Total: 8 + 1 + 32 + 1 + 4 + 1 + 1 + 8 = 56 bytes
     """
-    import struct
-    if len(data) < 48: return {}
-    
-    # Simple manual BORSCH parsing
-    is_paused = bool(data[8])
-    authority = Pubkey.from_bytes(data[9:41])
-    bump = data[41]
-    pause_count = struct.unpack("<I", data[42:46])[0]
-    risk_score = data[46]
-    threshold = data[47]
-    # last_updated = struct.unpack("<q", data[48:56])[0] # Offset 48+8
-    
+    if len(data) < 56:
+        return {}
+
+    is_paused      = bool(data[8])
+    authority      = Pubkey.from_bytes(data[9:41])
+    bump           = data[41]
+    pause_count    = struct.unpack_from("<I", data, 42)[0]
+    last_risk_score = data[46]
+    risk_threshold = data[47]
+    last_updated   = struct.unpack_from("<q", data, 48)[0]
+
     return {
-        "is_paused": is_paused,
-        "authority": str(authority),
-        "pause_count": pause_count,
-        "last_risk_score": risk_score,
-        "risk_threshold": threshold
+        "is_paused":       is_paused,
+        "authority":       str(authority),
+        "bump":            bump,
+        "pause_count":     pause_count,
+        "last_risk_score": last_risk_score,
+        "risk_threshold":  risk_threshold,
+        "last_updated":    last_updated,
     }
 
 
 # ─── Keypair Management ───────────────────────────────────────────────────────
 
-def load_or_create_keypair() -> Keypair:
-    """Load keypair from disk, or generate a new one if not found."""
+def _load_keypair() -> Keypair:
+    """Load keypair from disk. Generate and save a new one if not found."""
     if KEYPAIR_FILE.exists():
         with open(KEYPAIR_FILE, "r") as f:
             secret = json.load(f)
-            return Keypair.from_bytes(bytes(secret))
+        return Keypair.from_bytes(bytes(secret))
 
-    print(f"{Fore.YELLOW}[Система] Генерирую новый keypair агента...")
+    print(f"{Fore.YELLOW}[Keypair] Generating new agent keypair...")
     kp = Keypair()
+    KEYPAIR_FILE.parent.mkdir(parents=True, exist_ok=True)
     with open(KEYPAIR_FILE, "w") as f:
         json.dump(list(kp.to_bytes()), f)
-    print(f"{Fore.GREEN}[Система] Keypair сохранён в {KEYPAIR_FILE}")
+    print(f"{Fore.GREEN}[Keypair] Saved to {KEYPAIR_FILE}")
     return kp
 
 
-# ─── Wallet Funding & Balance ──────────────────────────────────────────────────
-
-def _request_airdrop_with_retry(pk: Pubkey, lamports: int, retries: int = 3) -> bool:
-    """Request SOL airdrop with exponential backoff for Devnet stability."""
-    for attempt in range(1, retries + 1):
-        try:
-            solana_client.request_airdrop(pk, lamports)
-            wait_sec = 5 * attempt
-            print(f"{Fore.YELLOW}  Попытка {attempt}/{retries}: ожидаю {wait_sec}с...")
-            time.sleep(wait_sec)
-
-            new_balance = solana_client.get_balance(pk).value
-            if new_balance >= lamports:
-                print(f"{Fore.GREEN}  Баланс пополнен: {new_balance / 1e9:.6f} SOL")
-                return True
-        except Exception as e:
-            print(f"{Fore.YELLOW}  Airdrop attempt {attempt} failed: {e}")
-        time.sleep(2)
-    return False
-
-
-def check_and_fund_wallet(kp: Keypair):
-    """Notify user if balance is low, without blocking startup."""
-    pk = kp.pubkey()
-    balance = solana_client.get_balance(pk).value
-    print(f"{Fore.CYAN}[Кошелек] Pubkey : {pk}")
-    print(f"{Fore.CYAN}[Кошелек] Баланс : {balance / 1e9:.6f} SOL")
-
-    if balance < 1_000_000:
-        print(f"{Fore.YELLOW}[Кошелек] Баланс низкий. Для транзакций пополните через:")
-        print(f"{Fore.CYAN}           https://faucet.solana.com  (address: {pk})")
-
-
-# ─── Startup Check ────────────────────────────────────────────────────────────
+# ─── Startup Verification ─────────────────────────────────────────────────────
 
 def verify_solana_or_crash():
-    """Fail-Fast initialization for maximum reliability."""
-    print(f"{Fore.CYAN}[Система] Подключение к Solana ({SOLANA_RPC_URL})...")
+    """
+    Fail-fast startup check. Exits with code 1 if Solana is unreachable.
+    Also initializes the Treasury PDA if it doesn't exist yet.
+    """
+    print(f"{Fore.CYAN}[Blockchain] Connecting to Solana ({SOLANA_RPC_URL})...")
     try:
-        if not solana_client.is_connected():
-            raise ConnectionError("RPC не ответил на пинг.")
+        if not rpc.is_connected():
+            raise ConnectionError("RPC endpoint did not respond.")
 
-        version_resp = solana_client.get_version()
-        solana_version = version_resp.value.solana_core
-        print(f"{Fore.GREEN}[OK] Solana v{solana_version} — подключено (Devnet).")
+        version = rpc.get_version().value.solana_core
+        print(f"{Fore.GREEN}[OK] Solana v{version} — Devnet connected.")
 
-        kp = load_or_create_keypair()
-        check_and_fund_wallet(kp)
-        
-        # Check if Treasury is initialized
+        kp = _load_keypair()
+        balance = rpc.get_balance(kp.pubkey()).value
+        balance_sol = balance / 1e9
+        print(f"{Fore.CYAN}[Wallet] Pubkey : {kp.pubkey()}")
+        print(f"{Fore.CYAN}[Wallet] Balance: {balance_sol:.6f} SOL")
+
+        if balance < 1_000_000:  # < 0.001 SOL
+            print(f"{Fore.YELLOW}[Wallet] Balance too low for transactions.")
+            print(f"{Fore.CYAN}         Fund at: https://faucet.solana.com/?address={kp.pubkey()}")
+
+        # Auto-initialize PDA if missing
         status = get_status()
         if status.get("account_missing"):
-            print(f"{Fore.YELLOW}[КРИТИЧНО] Контракт казначейства не инициализирован.")
-            execute_initialize()
+            print(f"{Fore.YELLOW}[Contract] Treasury PDA not found. Initializing...")
+            sig, err = execute_initialize()
+            if sig:
+                print(f"{Fore.GREEN}[Contract] Initialized: {sig}")
+            elif err:
+                print(f"{Fore.YELLOW}[Contract] Init failed (may need SOL): {err}")
 
     except Exception as e:
         print(f"\n{Fore.RED}{Style.BRIGHT}{'=' * 56}")
         print(f"{Fore.RED}{Style.BRIGHT} [CRITICAL] SOLANA BLOCKCHAIN UNREACHABLE")
         print(f"{Fore.RED}{Style.BRIGHT}{'=' * 56}")
-        print(f"{Fore.WHITE} Ошибка: {e}")
+        print(f"{Fore.WHITE} Error: {e}")
         sys.exit(1)
 
 
-# ─── API Helpers ──────────────────────────────────────────────────────────────
+# ─── Status / Health ──────────────────────────────────────────────────────────
 
 def get_status() -> dict:
-    """Fetch live blockchain and wallet health, including the on-chain risk threshold."""
+    """
+    Returns live blockchain and contract state.
+    Used by /api/status and the background monitor.
+    """
     try:
-        version_resp = solana_client.get_version()
-        kp = load_or_create_keypair()
+        kp = _load_keypair()
         pubkey = kp.pubkey()
-        balance = solana_client.get_balance(pubkey).value
-        
-        # Default state
-        state = {
-            "is_paused": False,
-            "risk_threshold": 80,
-            "pause_count": 0,
-            "last_risk_score": 0
+
+        version = rpc.get_version().value.solana_core
+        balance = rpc.get_balance(pubkey).value
+        balance_sol = round(balance / 1e9, 6)
+
+        on_chain_state = {
+            "is_paused":       False,
+            "risk_threshold":  80,
+            "pause_count":     0,
+            "last_risk_score": 0,
         }
         account_missing = False
-        
-        # Attempt to read active on-chain threshold from PDA
+
         try:
-            treasury_pda = get_pda_treasury(pubkey)
-            account_info = solana_client.get_account_info(treasury_pda)
-            if account_info.value:
-                state = decode_treasury_state(account_info.value.data)
+            treasury_pda = get_treasury_pda(pubkey)
+            account_info = rpc.get_account_info(treasury_pda)
+            if account_info.value and account_info.value.data:
+                decoded = _decode_treasury_state(bytes(account_info.value.data))
+                if decoded:
+                    on_chain_state.update(decoded)
             else:
                 account_missing = True
-        except:
+        except Exception:
             account_missing = True
 
-        balance_sol = round(balance / 1_000_000_000, 6)
-        
         return {
-            "connected": True,
-            "cluster": "devnet",
-            "rpc_url": SOLANA_RPC_URL,
-            "solana_version": version_resp.value.solana_core,
-            "agent_pubkey": str(pubkey),
+            "connected":         True,
+            "cluster":           "devnet",
+            "rpc_url":           SOLANA_RPC_URL,
+            "solana_version":    version,
+            "agent_pubkey":      str(pubkey),
             "agent_balance_sol": balance_sol,
-            "balance_status": "LOW" if balance_sol < 0.01 else "OK",
-            "is_paused": state.get("is_paused"),
-            "risk_threshold": state.get("risk_threshold"),
-            "pause_count": state.get("pause_count"),
-            "last_risk_score": state.get("last_risk_score"),
-            "account_missing": account_missing,
-            "status_message": "Account Ready" if not account_missing else "Account Missing (Initialize Required)"
+            "balance_status":    "LOW" if balance_sol < 0.01 else "OK",
+            "is_paused":         on_chain_state["is_paused"],
+            "risk_threshold":    on_chain_state["risk_threshold"],
+            "pause_count":       on_chain_state["pause_count"],
+            "last_risk_score":   on_chain_state["last_risk_score"],
+            "account_missing":   account_missing,
         }
+
     except Exception as e:
         return {
-            "connected": False, 
-            "error": str(e),
-            "status_message": f"Connection Error: {str(e)[:50]}"
+            "connected":     False,
+            "error":         str(e),
+            "is_paused":     False,
+            "risk_threshold": 80,
+            "account_missing": True,
         }
 
 
-# ─── Core On-Chain Logic ──────────────────────────────────────────────────────
+# ─── Transaction Helpers ──────────────────────────────────────────────────────
 
 def _send_tx(instruction: Instruction, signer: Keypair) -> tuple[str | None, str | None]:
-    """Helper to sign and send transactions. Returns (signature, error_message)."""
+    """
+    Builds, signs, and sends a transaction.
+    Returns (signature_str, None) on success or (None, error_str) on failure.
+    """
     try:
-        recent_blockhash = solana_client.get_latest_blockhash().value.blockhash
-        msg = Message.new_with_blockhash([instruction], signer.pubkey(), recent_blockhash)
+        blockhash_resp = rpc.get_latest_blockhash()
+        recent_blockhash = blockhash_resp.value.blockhash
+
+        msg = Message.new_with_blockhash(
+            [instruction],
+            signer.pubkey(),
+            recent_blockhash,
+        )
         tx = Transaction([signer], msg, recent_blockhash)
 
-        resp = solana_client.send_raw_transaction(
+        resp = rpc.send_raw_transaction(
             bytes(tx),
             opts=TxOpts(skip_preflight=False, preflight_commitment="confirmed"),
         )
-        return str(resp.value), None
-    except Exception as e:
-        err_msg = str(e)
-        if "AccountNotFound" in err_msg:
-            err_msg = f"Insufficient SOL or Missing Account. Raw: {err_msg[:60]}"
-        elif "0 record of a prior credit" in err_msg or "Attempt to debit" in err_msg:
-            err_msg = "Insufficient SOL: Please Fund your Wallet."
-        print(f"{Fore.RED}[BLOCKCHAIN ERROR] {err_msg}")
-        return None, err_msg
+        sig = str(resp.value)
+        print(f"{Fore.GREEN}[TX] Sent: https://solscan.io/tx/{sig}?cluster=devnet")
+        return sig, None
 
+    except Exception as e:
+        err = str(e)
+        if "InsufficientFundsForRent" in err or "debit" in err or "credit" in err:
+            err = "Insufficient SOL balance. Fund the agent wallet."
+        elif "AccountNotFound" in err:
+            err = "Treasury PDA not found. Call initialize first."
+        print(f"{Fore.RED}[TX ERROR] {err}")
+        return None, err
+
+
+# ─── On-Chain Instructions ────────────────────────────────────────────────────
 
 def execute_initialize() -> tuple[str | None, str | None]:
-    """Creates the Treasury PDA on Solana."""
-    print(f"{Fore.CYAN}[БЛОКЧЕЙН] Инициализация аккаунта казначейства...")
-    kp = load_or_create_keypair()
+    """Creates the Treasury PDA account on Solana Devnet."""
+    kp = _load_keypair()
     authority = kp.pubkey()
-    treasury_pda = get_pda_treasury(authority)
-    
+    treasury_pda = get_treasury_pda(authority)
+
     accounts = [
-        AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
-        AccountMeta(pubkey=authority, is_signer=True, is_writable=True),
-        AccountMeta(pubkey=Pubkey.from_string("11111111111111111111111111111111"), is_signer=False, is_writable=False), 
+        AccountMeta(pubkey=treasury_pda,   is_signer=False, is_writable=True),
+        AccountMeta(pubkey=authority,       is_signer=True,  is_writable=True),
+        AccountMeta(pubkey=SYSTEM_PROGRAM_ID, is_signer=False, is_writable=False),
     ]
-    
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_initialize_ix(), accounts)
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, _encode_initialize(), accounts)
     return _send_tx(ix, kp)
 
 
 def execute_emergency_pause(reason: str, risk_score: int) -> tuple[str | None, str | None]:
-    """Triggers the safe lock on-chain. Returns (sig, err)."""
-    print(f"\n{Fore.RED}{Style.BRIGHT}[БЛОКЧЕЙН] КРИТИЧЕСКИЙ ВЫЗОВ: Emergency Pause!")
-    kp = load_or_create_keypair()
+    """
+    Triggers the on-chain emergency_pause instruction.
+    risk_score must be >= the contract's active risk_threshold.
+    """
+    print(f"\n{Fore.RED}{Style.BRIGHT}[Blockchain] EMERGENCY PAUSE — score={risk_score}")
+    kp = _load_keypair()
     authority = kp.pubkey()
-    treasury_pda = get_pda_treasury(authority)
+    treasury_pda = get_treasury_pda(authority)
 
     accounts = [
         AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
-        AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+        AccountMeta(pubkey=authority,    is_signer=True,  is_writable=False),
     ]
-
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_emergency_pause_ix(risk_score, reason), accounts)
+    ix = Instruction(
+        RISK_MANAGER_PROGRAM_ID,
+        _encode_emergency_pause(risk_score, reason),
+        accounts,
+    )
     return _send_tx(ix, kp)
 
 
 def execute_resume() -> tuple[str | None, str | None]:
-    """Unlocks the treasury on-chain. Returns (sig, err)."""
-    print(f"{Fore.GREEN}[БЛОКЧЕЙН] Восстановление системы: Resume...")
-    kp = load_or_create_keypair()
+    """Unlocks the treasury by calling resume on-chain."""
+    print(f"{Fore.GREEN}[Blockchain] Resume treasury...")
+    kp = _load_keypair()
     authority = kp.pubkey()
-    treasury_pda = get_pda_treasury(authority)
+    treasury_pda = get_treasury_pda(authority)
 
     accounts = [
         AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
-        AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+        AccountMeta(pubkey=authority,    is_signer=True,  is_writable=False),
     ]
-
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_resume_ix(), accounts)
+    ix = Instruction(RISK_MANAGER_PROGRAM_ID, _encode_resume(), accounts)
     return _send_tx(ix, kp)
 
 
 def execute_threshold_update(new_threshold: int) -> tuple[str | None, str | None]:
-    """Updates dynamic risk sensitivity (DARS). Returns (sig, err)."""
-    print(f"\n{Fore.YELLOW}[КОНФИГ] DARS: Изменение порога на {new_threshold}/100...")
-    kp = load_or_create_keypair()
+    """Updates DARS sensitivity threshold on-chain (must be 50–95)."""
+    print(f"{Fore.YELLOW}[Blockchain] DARS threshold → {new_threshold}")
+    kp = _load_keypair()
     authority = kp.pubkey()
-    treasury_pda = get_pda_treasury(authority)
+    treasury_pda = get_treasury_pda(authority)
 
     accounts = [
         AccountMeta(pubkey=treasury_pda, is_signer=False, is_writable=True),
-        AccountMeta(pubkey=authority, is_signer=True, is_writable=False),
+        AccountMeta(pubkey=authority,    is_signer=True,  is_writable=False),
     ]
-
-    ix = Instruction(RISK_MANAGER_PROGRAM_ID, encode_update_threshold_ix(new_threshold), accounts)
+    ix = Instruction(
+        RISK_MANAGER_PROGRAM_ID,
+        _encode_update_threshold(new_threshold),
+        accounts,
+    )
     return _send_tx(ix, kp)

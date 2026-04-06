@@ -9,12 +9,12 @@ from agent.analyzer import RiskAuditor
 from agent.models import NewsItem
 from agent.monitor import BackgroundMonitor
 from agent.solana_client import (
-    verify_solana_or_crash, 
+    verify_solana_or_crash,
     execute_initialize,
-    execute_emergency_pause, 
+    execute_emergency_pause,
     execute_threshold_update,
     execute_resume,
-    get_status
+    get_status,
 )
 
 # Silence Flask's request logs — we print our own

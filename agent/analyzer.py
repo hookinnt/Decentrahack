@@ -16,30 +16,31 @@ genai.configure(api_key=API_KEY)
 # ─── Risk Assessment Logic Engine Rules ──────────────────────────────────────
 
 EVALUATION_RULES = """
-Выполняй роль строгого финансового контролера (Risk Auditor) в сфере DeFi.
-Контекст: управление автоматизированным защитным слоем сетевого протокола.
-Твоя задача — формировать сухие экспертные заключения без лишних слов.
+Роль: Ведущий Risk Auditor в децентрализованной автономной организации (DAO).
+Задача: Анализ входящих рыночных и новостных событий для предотвращения эксплойтов.
 
-СТРОГИЕ ПРАВИЛА ВЫВОДА:
-1. Максимальная краткость и техническая точность. 
-2. Только прямой вердикт на русском языке.
-3. Каждая оценка должна быть логически обоснована влиянием метрик (TVL, Volatility) на риск.
+ТЕХНИЧЕСКИЕ ПРИНЦИПЫ:
+1. Аналитический лаконизм. Минимум эмоций, максимум метрических связей.
+2. Причинно-следственная связь: Как изменение TVL или волатильности влияет на вероятность атаки?
+3. Векторы угроз: Учитывай флеш-лоаны, манипуляцию оракулами, проблемы мостов (Bridges), задержки в L1.
 
-ШКАЛА ОЦЕНКИ РИСКОВ:
-- 0-39: НОРМА. Операционных рисков нет.
-- 40-79: ВНИМАНИЕ. Подозрительная активность или сетевая нестабильность.
-- 80-100: КРИТИЧЕСКАЯ УГРОЗА. Немедленная блокировка (action_required: true).
+ШКАЛА ОЦЕНКИ (DARS COMPLIANT):
+- 00-39: СТАБИЛЬНО (Operational). Фоновые события.
+- 40-74: ПРЕДУПРЕЖДЕНИЕ (Elevated). Нестандартные паттерны.
+- 75-100: КРИТИЧЕСКИЙ РИСК (Emergency). Автономная активация 'emergency_pause'.
 
-АДАПТИВНОСТЬ ПОРОГА:
-- Оценивай волатильность: High -> порог 65-70, Medium -> 80, Low -> 85-90.
+АДАПТИВНОСТЬ (DARS):
+- Рекомендуй новый порог (recommended_threshold) на основе текущей макро-волатильности.
+- Высокая волатильность -> Понижай порог (например, до 70).
+- Низкая волатильность -> Повышай порог (например, до 85-90).
 
-ОЖИДАЕМЫЙ ФОРМАТ (СТРОГИЙ JSON):
+ОТВЕТ В ФОРМАТЕ JSON:
 {
   "risk_score": int,
-  "reason": "Краткое техническое обоснование (до 180 символов)",
+  "reason": "Технический аудит события (до 180 симв.)",
   "action_required": bool,
   "recommended_threshold": int,
-  "confidence_score": int (0-100)
+  "confidence_score": int
 }
 """
 
@@ -79,27 +80,30 @@ class RiskAuditor:
         except Exception as e:
             print(f"[ENGINE_ERR] External processing failed: {e}")
             
-            # ─── FALLBACK: Keyword-based deterministic assessment ───────────
+            # ─── FALLBACK: Deterministic On-Chain Security ───────────────────
             low_text = event.content.lower()
-            score = 15
-            reason = "Стабильный рыночный фон. Аномалий не обнаружено."
+            score = 20
+            reason = "Standard operational baseline. No anomalies detected."
             
-            if any(x in low_text for x in ["hack", "exploit", "взлом", "кража", "threat"]):
-                score = 95
-                reason = "Критический инцидент: обнаружены признаки угрозы."
-            elif any(x in low_text for x in ["suspicious", "delay", "подозрительно", "scam"]):
-                score = 55
-                reason = "Подозрительная активность в сети. Повышенная бдительность."
+            # Critical Exploit Vectors
+            critical_patterns = ["hack", "exploit", "взлом", "кража", "threat", "drain", "vulnerability"]
+            # Elevated Risk Vectors
+            warning_patterns = ["suspicious", "delay", "подозрительно", "scam", "halt", "maintenance"]
+            
+            if any(x in low_text for x in critical_patterns):
+                score = 98
+                reason = "CRITICAL: Exploit vector identified in telemetry stream."
+            elif any(x in low_text for x in warning_patterns):
+                score = 65
+                reason = "WARNING: Suspicious network activity or operational delay."
             elif event.volatility == "High":
-                score = 35
-                reason = "Повышенная волатильность рынка. Прямых угроз нет."
-
-            if "429" in str(e) or "quota" in str(e).lower():
-                reason = f"Deterministic Mode: {reason}"
+                score = 45
+                reason = "Notice: Market volatility elevated. Protocol on high alert."
 
             return RiskAssessment(
                 risk_score=score,
                 reason=reason,
                 action_required=(score >= 80),
-                confidence_score=50
+                recommended_threshold=70 if event.volatility == "High" else 80,
+                confidence_score=75
             )
