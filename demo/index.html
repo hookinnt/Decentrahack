@@ -204,6 +204,7 @@
             </div>
 
             <div class="actions">
+                <button class="btn btn-secondary" style="border-color: #34c759; color: #34c759;" onclick="runBackgroundMocap()" id="btn-start-demo">ЗАПУСТИТЬ ЭМУЛЯЦИЮ</button>
                 <button class="btn btn-primary" onclick="triggerManualAudit()" id="btn-audit">ПРОВЕРИТЬ СЕЙЧАС</button>
                 <button class="btn btn-secondary" onclick="updateNavStatus()" id="btn-update">ОБНОВИТЬ СТАТУС</button>
                 <button class="btn btn-unlock" onclick="unlockTreasury()" id="btn-unlock">РАЗБЛОКИРОВАТЬ СРЕДСТВА</button>
@@ -320,6 +321,11 @@
 
         // Background Events Simulation
         async function runBackgroundMocap() {
+            const startBtn = document.getElementById('btn-start-demo');
+            if(startBtn) {
+                startBtn.style.display = 'none';
+            }
+
             addHistory("Сканирование Сети", "Агенты ИИ активно мониторят транзакции в реальном времени.", 0, "success");
             
             await wait(3000);
@@ -332,8 +338,7 @@
             addHistory("Эксплойт Предотвращен", "Транзакция нарушителя заблокирована он-чейн. Средства находятся в безопасности.", 98, "danger");
         }
 
-        // Start 
-        setTimeout(runBackgroundMocap, 1500);
+        // Removed auto-start setTimeout
 
     </script>
 </body>
