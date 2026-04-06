@@ -8,10 +8,8 @@ from agent.models import NewsItem, RiskAssessment
 
 load_dotenv()
 API_KEY = os.getenv("GEMINI_API_KEY")
-if not API_KEY:
-    raise ValueError("System Configuration Error: Missing Core API Key in .env")
-
-genai.configure(api_key=API_KEY)
+if API_KEY:
+    genai.configure(api_key=API_KEY)
 
 # ─── Risk Assessment Logic Engine Rules ──────────────────────────────────────
 
@@ -49,7 +47,11 @@ class RiskAuditor:
     Main Logic Engine for risk evaluation via off-chain compute.
     """
     def __init__(self):
-        self.client = genai.GenerativeModel('gemini-flash-latest', system_instruction=EVALUATION_RULES)
+        self.client = None
+        if API_KEY:
+            self.client = genai.GenerativeModel('gemini-flash-latest', system_instruction=EVALUATION_RULES)
+        else:
+            print("[ENGINE WARN] GEMINI_API_KEY missing. Running in deterministic fallback mode.")
 
     def process_event(self, event: NewsItem) -> RiskAssessment:
         """
@@ -63,6 +65,8 @@ class RiskAuditor:
         )
         
         try:
+            if not self.client:
+                raise RuntimeError("Gemini client is not configured")
             response = self.client.generate_content(
                 payload,
                 generation_config=genai.GenerationConfig(

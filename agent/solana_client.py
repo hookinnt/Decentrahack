@@ -9,9 +9,9 @@ Responsibilities:
 """
 import sys
 import json
-import time
 import struct
 from pathlib import Path
+import os
 
 from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
@@ -21,16 +21,19 @@ from solders.instruction import Instruction, AccountMeta
 from solders.message import Message
 from solders.transaction import Transaction
 from colorama import Fore, Style, init
+from dotenv import load_dotenv
 
 init(autoreset=True)
+load_dotenv()
 
 # ─── Configuration ────────────────────────────────────────────────────────────
 
-SOLANA_RPC_URL = "https://api.devnet.solana.com"
+SOLANA_RPC_URL = os.getenv("SOLANA_RPC_URL", "https://api.devnet.solana.com")
 
-# Program ID must match the deployed Anchor contract (lib.rs declare_id!)
-# Replace this with your actual deployed Program ID after `anchor deploy`
-RISK_MANAGER_PROGRAM_ID = Pubkey.from_string("Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS")
+# Program ID should match deployed Anchor contract (lib.rs declare_id!).
+RISK_MANAGER_PROGRAM_ID = Pubkey.from_string(
+    os.getenv("PROGRAM_ID", "Fg6PaFpoGXkYsidMpWTK6W2BeZ7FEfcYkg476zPFsLnS")
+)
 
 SYSTEM_PROGRAM_ID = Pubkey.from_string("11111111111111111111111111111111")
 
@@ -81,6 +84,11 @@ def _encode_resume() -> bytes:
 def _encode_update_threshold(new_threshold: int) -> bytes:
     disc = _disc("update_threshold")
     return disc + bytes([new_threshold & 0xFF])
+
+
+def _validate_threshold(new_threshold: int):
+    if not 50 <= int(new_threshold) <= 95:
+        raise ValueError("Threshold must be within 50..95.")
 
 
 # ─── BORSH Decoding ───────────────────────────────────────────────────────────
@@ -333,6 +341,7 @@ def execute_resume() -> tuple[str | None, str | None]:
 
 def execute_threshold_update(new_threshold: int) -> tuple[str | None, str | None]:
     """Updates DARS sensitivity threshold on-chain (must be 50–95)."""
+    _validate_threshold(new_threshold)
     print(f"{Fore.YELLOW}[Blockchain] DARS threshold → {new_threshold}")
     kp = _load_keypair()
     authority = kp.pubkey()

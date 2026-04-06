@@ -201,7 +201,7 @@
 
             <div class="actions">
                 <button class="btn btn-primary" onclick="reqAnalysis()" id="btn-audit">ПРОВЕРИТЬ СЕЙЧАС</button>
-                <button class="btn btn-secondary" onclick="reqStatus()" id="btn-update">ОБНОВИТЬ СТАТУС</button>
+                <button class="btn btn-secondary" onclick="syncChainState()" id="btn-update">СИНХРОНИЗИРОВАТЬ БЛОКЧЕЙН</button>
                 <button class="btn btn-unlock hidden" onclick="manageTx('resume')" id="btn-resume">РАЗБЛОКИРОВАТЬ СРЕДСТВА</button>
                 <button class="btn btn-init hidden" onclick="manageTx('initialize')" id="btn-init">ИНИЦИАЛИЗИРОВАТЬ PDA</button>
             </div>
@@ -247,7 +247,8 @@
             setTimeout(() => { el.style.opacity = '0'; setTimeout(() => el.remove(), 500); }, 3000);
         }
 
-        socket.on('state_update', (state) => {
+        function renderState(state) {
+            if (!state || !state.status) return;
             const onChain = state.status.on_chain;
             const history = state.history;
             const latestRisk = history.length > 0 ? history[0].risk_score : 0;
@@ -308,7 +309,9 @@
                     showToast(state.notifications[0].message);
                 }
             }
-        });
+        }
+
+        socket.on('state_update', renderState);
 
         async function reqAnalysis() {
             const btn = document.getElementById('btn-audit');
@@ -323,11 +326,19 @@
             finally { btn.disabled = false; btn.innerText = "ПРОВЕРИТЬ СЕЙЧАС"; }
         }
 
-        async function reqStatus() {
+        async function syncChainState() {
             const btn = document.getElementById('btn-update');
             btn.innerText = "СИНХРОНИЗАЦИЯ...";
-            try { await fetch('/api/status'); } catch(e) {}
-            setTimeout(() => { btn.innerText = "ОБНОВИТЬ СТАТУС"; }, 500);
+            try {
+                const res = await fetch('/api/monitor/refresh', { method: 'POST' });
+                const state = await res.json();
+                renderState(state);
+                showToast("Состояние синхронизировано.");
+            } catch(e) {
+                showToast("Ошибка синхронизации.");
+            } finally {
+                btn.innerText = "СИНХРОНИЗИРОВАТЬ БЛОКЧЕЙН";
+            }
         }
 
         async function manageTx(action) {
@@ -343,6 +354,17 @@
             } catch(e) { showToast("ОШИБКА."); }
             finally { btn.disabled = false; btn.innerText = origText; }
         }
+
+        // Initial UI bootstrap before first websocket push.
+        (async () => {
+            try {
+                const res = await fetch('/api/monitor/state');
+                const state = await res.json();
+                renderState(state);
+            } catch (e) {
+                showToast("Начальная синхронизация не удалась.");
+            }
+        })();
     </script>
 </body>
 </html>

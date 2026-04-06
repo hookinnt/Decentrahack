@@ -57,6 +57,13 @@ def api_monitor_state():
     """Returns the current state of the Background Monitor Organism."""
     return jsonify(monitor.get_state())
 
+@app.route('/api/monitor/refresh', methods=['POST'])
+def api_monitor_refresh():
+    """Force-push current monitor state to connected dashboards."""
+    state = monitor.get_state()
+    socketio.emit('state_update', state)
+    return jsonify(state)
+
 
 @app.route('/api/analyze', methods=['POST'])
 def analyze():
@@ -96,7 +103,8 @@ def analyze():
                 response_data["threshold_updated"] = True
 
         # Send emergency transaction if risk is high
-        active_threshold = assessment.recommended_threshold or 80
+        status = get_status()
+        active_threshold = status.get("risk_threshold", 80)
         if assessment.action_required and assessment.risk_score >= active_threshold:
             tx_hash, tx_err = execute_emergency_pause(assessment.reason, assessment.risk_score)
             if tx_hash:

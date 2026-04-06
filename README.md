@@ -156,6 +156,13 @@ PROGRAM_ID=your_deployed_program_id
 
 See `.env.example` for the full reference.
 
+### Production Notes
+
+- The live dashboard has two distinct actions:
+  - `ПРОВЕРИТЬ СЕЙЧАС` triggers a manual AI risk analysis cycle.
+  - `СИНХРОНИЗИРОВАТЬ БЛОКЧЕЙН` forces immediate state sync from monitor/on-chain state.
+- If `GEMINI_API_KEY` is missing, the system does not crash: it automatically falls back to deterministic threat scoring.
+
 ---
 
 ## License

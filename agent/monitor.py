@@ -3,7 +3,7 @@ import threading
 import requests
 from datetime import datetime
 from agent.analyzer import RiskAuditor
-from agent.models import NewsItem, RiskAssessment
+from agent.models import NewsItem
 from agent.news_engine import NewsEngine
 from agent.solana_client import (
     get_status, 
@@ -119,9 +119,10 @@ class BackgroundMonitor:
         
         try:
             assessment = self.analyzer.process_event(news)
+            assessment_data = assessment.dict()
             
             with self._lock:
-                self.history.insert(0, assessment)
+                self.history.insert(0, assessment_data)
                 if len(self.history) > 30: self.history.pop()
                 
                 # ─── Autonomous Execution Logic ──────────────────────────────────
@@ -133,21 +134,35 @@ class BackgroundMonitor:
                 if assessment.action_required and assessment.risk_score >= active_threshold:
                     if not current_pause_state:
                         print(f"[AUTONOMOUS] High Risk ({assessment.risk_score}). Triggering On-Chain Pause.")
-                        execute_emergency_pause(assessment.reason, assessment.risk_score)
+                        tx_hash, tx_err = execute_emergency_pause(assessment.reason, assessment.risk_score)
+                        if tx_hash:
+                            assessment_data["tx_hash"] = tx_hash
+                            assessment_data["tx_action"] = "emergency_pause"
+                        if tx_err:
+                            assessment_data["tx_error"] = tx_err
                     self.safe_streak = 0
                 
                 # 2. DARS (Dynamic Threshold Update)
                 rec_threshold = assessment.recommended_threshold
                 if rec_threshold and abs(rec_threshold - active_threshold) >= 5:
                     print(f"[AUTONOMOUS] DARS: Adjusting on-chain threshold to {rec_threshold}.")
-                    execute_threshold_update(rec_threshold)
+                    tx_hash, tx_err = execute_threshold_update(rec_threshold)
+                    if tx_hash:
+                        assessment_data["threshold_tx_hash"] = tx_hash
+                    if tx_err:
+                        assessment_data["threshold_tx_error"] = tx_err
 
                 # 3. Autonomous Recovery (Resume)
                 if assessment.risk_score < 30:
                     self.safe_streak += 1
                     if self.safe_streak >= 5 and current_pause_state:
                         print(f"[AUTONOMOUS] Recovery detected (Safe Streak: {self.safe_streak}). Resuming Treasury.")
-                        execute_resume()
+                        tx_hash, tx_err = execute_resume()
+                        if tx_hash:
+                            assessment_data["tx_hash"] = tx_hash
+                            assessment_data["tx_action"] = "resume"
+                        if tx_err:
+                            assessment_data["tx_error"] = tx_err
                         self.safe_streak = 0
                 else:
                     self.safe_streak = 0
@@ -180,6 +195,6 @@ class BackgroundMonitor:
         with self._lock:
             return {
                 "status": self.current_status,
-                "history": [h.dict() for h in self.history],
+                "history": self.history,
                 "notifications": self.notifications
             }
