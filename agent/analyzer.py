@@ -49,7 +49,7 @@ class RiskAuditor:
     def __init__(self):
         self.client = None
         if API_KEY:
-            self.client = genai.GenerativeModel('gemini-flash-latest', system_instruction=EVALUATION_RULES)
+            self.client = genai.GenerativeModel('gemini-1.5-flash', system_instruction=EVALUATION_RULES)
         else:
             print("[ENGINE WARN] GEMINI_API_KEY missing. Running in deterministic fallback mode.")
 

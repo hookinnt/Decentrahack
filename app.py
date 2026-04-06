@@ -27,7 +27,7 @@ log.setLevel(logging.ERROR)
 
 app = Flask(__name__)
 app.config['SECRET_KEY'] = 'secret!'
-socketio = SocketIO(app, cors_allowed_origins="*", async_mode='threading')
+socketio = SocketIO(app, cors_allowed_origins="*", async_mode='eventlet')
 
 # ─── Startup: Solana is required ──────────────────────────────────────────────
 verify_solana_or_crash()
@@ -243,4 +243,4 @@ if __name__ == '__main__':
     print("   Status: Background Monitoring ACTIVE (WebSockets ENABLED)")
     print("=" * 56)
     print("=> http://127.0.0.1:5000\n")
-    socketio.run(app, host='127.0.0.1', port=5000, debug=False, allow_unsafe_werkzeug=True)
+    socketio.run(app, host='0.0.0.0', port=5000, debug=False)
