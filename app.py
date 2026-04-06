@@ -59,9 +59,8 @@ def api_monitor_state():
 
 @app.route('/api/monitor/refresh', methods=['POST'])
 def api_monitor_refresh():
-    """Force-push current monitor state to connected dashboards."""
-    state = monitor.get_state()
-    socketio.emit('state_update', state)
+    """Force-sync monitor with chain/market and broadcast immediately."""
+    state = monitor.refresh_now()
     return jsonify(state)
 
 
@@ -99,8 +98,12 @@ def analyze():
             if abs(assessment.recommended_threshold - current_threshold) >= 5:
                 # This could be potentially slow if waiting for confirmation, 
                 # but it's okay for this manual trigger.
-                execute_threshold_update(assessment.recommended_threshold)
-                response_data["threshold_updated"] = True
+                th_sig, th_err = execute_threshold_update(assessment.recommended_threshold)
+                response_data["threshold_updated"] = bool(th_sig)
+                if th_sig:
+                    response_data["threshold_tx_hash"] = th_sig
+                if th_err:
+                    response_data["threshold_error"] = th_err
 
         # Send emergency transaction if risk is high
         status = get_status()
@@ -111,6 +114,9 @@ def analyze():
                 response_data["tx_hash"] = tx_hash
             if tx_err:
                 response_data["error"] = tx_err
+
+        # Push updated state after manual analysis actions.
+        monitor.refresh_now()
 
         return jsonify(response_data)
 

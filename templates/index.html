@@ -317,23 +317,28 @@
             const btn = document.getElementById('btn-audit');
             btn.disabled = true; btn.innerText = "СКАНИРОВАНИЕ...";
             try {
-                await fetch('/api/analyze', {
+                const res = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
                     body: JSON.stringify({ news: 'Принудительный запрос аудита администратором' })
                 });
+                const data = await res.json();
+                if (data.error) showToast("Ошибка анализа: " + data.error);
+                else if (data.tx_hash) showToast("Emergency tx отправлен.");
+                else showToast("Анализ завершен.");
+                await syncChainState(true);
             } catch(e) { showToast("Network error."); }
             finally { btn.disabled = false; btn.innerText = "ПРОВЕРИТЬ СЕЙЧАС"; }
         }
 
-        async function syncChainState() {
+        async function syncChainState(silent = false) {
             const btn = document.getElementById('btn-update');
             btn.innerText = "СИНХРОНИЗАЦИЯ...";
             try {
                 const res = await fetch('/api/monitor/refresh', { method: 'POST' });
                 const state = await res.json();
                 renderState(state);
-                showToast("Состояние синхронизировано.");
+                if (!silent) showToast("Состояние синхронизировано.");
             } catch(e) {
                 showToast("Ошибка синхронизации.");
             } finally {

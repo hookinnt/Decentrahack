@@ -162,6 +162,7 @@ See `.env.example` for the full reference.
   - `ПРОВЕРИТЬ СЕЙЧАС` triggers a manual AI risk analysis cycle.
   - `СИНХРОНИЗИРОВАТЬ БЛОКЧЕЙН` forces immediate state sync from monitor/on-chain state.
 - If `GEMINI_API_KEY` is missing, the system does not crash: it automatically falls back to deterministic threat scoring.
+- Manual analysis now returns and surfaces real tx results (`tx_hash`, threshold update tx) and triggers an immediate dashboard refresh.
 
 ---
 

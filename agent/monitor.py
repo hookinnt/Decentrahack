@@ -57,35 +57,48 @@ class BackgroundMonitor:
             print(f"[MONITOR ERROR] Data fetch failed: {e}")
             return None, None
 
+    def _refresh_runtime_status(self):
+        """
+        Sync one snapshot of on-chain and market state.
+        Returns current price or None.
+        """
+        sol_status = get_status()
+        price, change_24h = self._fetch_market_data()
+
+        with self._lock:
+            self.current_status["on_chain"] = sol_status
+            if price is not None:
+                self.current_status["price"] = price
+                self.current_status["change_24h"] = round(change_24h, 2) if change_24h is not None else 0.0
+                self.current_status["last_check"] = datetime.now().strftime("%H:%M:%S")
+                self.current_status["tvl"] = "1,420,500,210"
+
+                if abs(self.current_status["change_24h"]) > 8:
+                    self.current_status["volatility"] = "High"
+                elif abs(self.current_status["change_24h"]) > 4:
+                    self.current_status["volatility"] = "Medium"
+                else:
+                    self.current_status["volatility"] = "Low"
+
+        return price
+
+    def refresh_now(self):
+        """
+        Immediate refresh used by manual sync endpoint.
+        """
+        self._refresh_runtime_status()
+        state = self.get_state()
+        if self.callback:
+            self.callback(state)
+        return state
+
     def _monitor_loop(self):
         it_count = 0
         while self.is_running:
-            # 1. Sync with Blockchain State Every Loop
-            sol_status = get_status()
-            
-            # 2. Fetch Market Data
-            price, change_24h = self._fetch_market_data()
-            
-            with self._lock:
-                self.current_status["on_chain"] = sol_status
-                if price:
-                    self.current_status["price"] = price
-                    self.current_status["change_24h"] = round(change_24h, 2) if change_24h else 0.0
-                    self.current_status["last_check"] = datetime.now().strftime("%H:%M:%S")
-                    
-                    # Note: TVL could be fetched via DefiLlama API if needed, 
-                    # but we keep it stable for now to avoid unnecessary API noise.
-                    self.current_status["tvl"] = "1,420,500,210"
+            # 1. Sync with Blockchain + Market
+            price = self._refresh_runtime_status()
 
-                    # Dynamic Volatility Calculation
-                    if abs(self.current_status["change_24h"]) > 8:
-                        self.current_status["volatility"] = "High"
-                    elif abs(self.current_status["change_24h"]) > 4:
-                        self.current_status["volatility"] = "Medium"
-                    else:
-                        self.current_status["volatility"] = "Low"
-
-            if price:
+            if price is not None:
                 # Trigger analysis on price shocks (>1.5% in 30s)
                 if self.last_price and abs(price - self.last_price) / self.last_price > 0.015:
                     self._trigger_risk_analysis(f"Ценовое потрясение: SOL изменился на {round((price-self.last_price)/self.last_price*100, 2)}% за 30 секунд. Возможная манипуляция ликвидностью.")
