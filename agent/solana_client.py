@@ -12,6 +12,7 @@ import json
 import struct
 from pathlib import Path
 import os
+import base64
 
 from solana.rpc.api import Client
 from solana.rpc.types import TxOpts
@@ -53,6 +54,10 @@ def get_treasury_pda(authority: Pubkey) -> Pubkey:
     seeds = [b"treasury", bytes(authority)]
     pda, _ = Pubkey.find_program_address(seeds, RISK_MANAGER_PROGRAM_ID)
     return pda
+
+
+def get_treasury_pda_from_string(authority_pubkey: str) -> Pubkey:
+    return get_treasury_pda(Pubkey.from_string(authority_pubkey))
 
 
 # ─── Anchor Instruction Discriminators ───────────────────────────────────────
@@ -151,7 +156,6 @@ def _load_keypair() -> Keypair:
 def verify_solana_or_crash():
     """
     Fail-fast startup check. Exits with code 1 if Solana is unreachable.
-    Also initializes the Treasury PDA if it doesn't exist yet.
     """
     print(f"{Fore.CYAN}[Blockchain] Connecting to Solana ({SOLANA_RPC_URL})...")
     try:
@@ -170,16 +174,6 @@ def verify_solana_or_crash():
         if balance < 1_000_000:  # < 0.001 SOL
             print(f"{Fore.YELLOW}[Wallet] Balance too low for transactions.")
             print(f"{Fore.CYAN}         Fund at: https://faucet.solana.com/?address={kp.pubkey()}")
-
-        # Auto-initialize PDA if missing
-        status = get_status()
-        if status.get("account_missing"):
-            print(f"{Fore.YELLOW}[Contract] Treasury PDA not found. Initializing...")
-            sig, err = execute_initialize()
-            if sig:
-                print(f"{Fore.GREEN}[Contract] Initialized: {sig}")
-            elif err:
-                print(f"{Fore.YELLOW}[Contract] Init failed (may need SOL): {err}")
 
     except Exception as e:
         print(f"\n{Fore.RED}{Style.BRIGHT}{'=' * 56}")
@@ -247,6 +241,150 @@ def get_status() -> dict:
             "risk_threshold": 80,
             "account_missing": True,
         }
+
+
+def get_status_for_authority(authority_pubkey: str) -> dict:
+    """
+    Returns live blockchain + contract state for a specific authority pubkey.
+    This is used by the frontend-auth flow where the connected wallet signs txs.
+    """
+    try:
+        pubkey = Pubkey.from_string(authority_pubkey)
+
+        version = rpc.get_version().value.solana_core
+        balance = rpc.get_balance(pubkey).value
+        balance_sol = round(balance / 1e9, 6)
+
+        on_chain_state = {
+            "is_paused": False,
+            "risk_threshold": 80,
+            "pause_count": 0,
+            "last_risk_score": 0,
+        }
+        account_missing = False
+
+        try:
+            treasury_pda = get_treasury_pda(pubkey)
+            account_info = rpc.get_account_info(treasury_pda)
+            if account_info.value and account_info.value.data:
+                decoded = _decode_treasury_state(bytes(account_info.value.data))
+                if decoded:
+                    on_chain_state.update(decoded)
+            else:
+                account_missing = True
+        except Exception:
+            account_missing = True
+
+        return {
+            "connected": True,
+            "cluster": "devnet",
+            "rpc_url": SOLANA_RPC_URL,
+            "solana_version": version,
+            # Keep UI keys identical to /api/status output.
+            "agent_pubkey": authority_pubkey,
+            "agent_balance_sol": balance_sol,
+            "balance_status": "LOW" if balance_sol < 0.01 else "OK",
+            "is_paused": on_chain_state["is_paused"],
+            "risk_threshold": on_chain_state["risk_threshold"],
+            "pause_count": on_chain_state["pause_count"],
+            "last_risk_score": on_chain_state["last_risk_score"],
+            "account_missing": account_missing,
+        }
+    except Exception as e:
+        return {
+            "connected": False,
+            "error": str(e),
+            "is_paused": False,
+            "risk_threshold": 80,
+            "account_missing": True,
+        }
+
+
+def _latest_blockhash_str() -> str:
+    blockhash_resp = rpc.get_latest_blockhash()
+    return str(blockhash_resp.value.blockhash)
+
+
+def prepare_initialize_tx_for_client(authority_pubkey: str) -> dict:
+    authority = Pubkey.from_string(authority_pubkey)
+    treasury_pda = get_treasury_pda(authority)
+
+    return {
+        "recent_blockhash": _latest_blockhash_str(),
+        "fee_payer": authority_pubkey,
+        "instructions": [
+            {
+                "program_id": str(RISK_MANAGER_PROGRAM_ID),
+                "accounts": [
+                    {"pubkey": str(treasury_pda), "is_signer": False, "is_writable": True},
+                    {"pubkey": authority_pubkey, "is_signer": True, "is_writable": True},
+                    {"pubkey": str(SYSTEM_PROGRAM_ID), "is_signer": False, "is_writable": False},
+                ],
+                "data_b64": base64.b64encode(_encode_initialize()).decode("utf-8"),
+            }
+        ],
+    }
+
+
+def prepare_emergency_pause_tx_for_client(authority_pubkey: str, reason: str, risk_score: int) -> dict:
+    authority = Pubkey.from_string(authority_pubkey)
+    treasury_pda = get_treasury_pda(authority)
+
+    return {
+        "recent_blockhash": _latest_blockhash_str(),
+        "fee_payer": authority_pubkey,
+        "instructions": [
+            {
+                "program_id": str(RISK_MANAGER_PROGRAM_ID),
+                "accounts": [
+                    {"pubkey": str(treasury_pda), "is_signer": False, "is_writable": True},
+                    {"pubkey": authority_pubkey, "is_signer": True, "is_writable": False},
+                ],
+                "data_b64": base64.b64encode(_encode_emergency_pause(int(risk_score), str(reason))).decode("utf-8"),
+            }
+        ],
+    }
+
+
+def prepare_resume_tx_for_client(authority_pubkey: str) -> dict:
+    authority = Pubkey.from_string(authority_pubkey)
+    treasury_pda = get_treasury_pda(authority)
+
+    return {
+        "recent_blockhash": _latest_blockhash_str(),
+        "fee_payer": authority_pubkey,
+        "instructions": [
+            {
+                "program_id": str(RISK_MANAGER_PROGRAM_ID),
+                "accounts": [
+                    {"pubkey": str(treasury_pda), "is_signer": False, "is_writable": True},
+                    {"pubkey": authority_pubkey, "is_signer": True, "is_writable": False},
+                ],
+                "data_b64": base64.b64encode(_encode_resume()).decode("utf-8"),
+            }
+        ],
+    }
+
+
+def prepare_threshold_update_tx_for_client(authority_pubkey: str, new_threshold: int) -> dict:
+    _validate_threshold(new_threshold)
+    authority = Pubkey.from_string(authority_pubkey)
+    treasury_pda = get_treasury_pda(authority)
+
+    return {
+        "recent_blockhash": _latest_blockhash_str(),
+        "fee_payer": authority_pubkey,
+        "instructions": [
+            {
+                "program_id": str(RISK_MANAGER_PROGRAM_ID),
+                "accounts": [
+                    {"pubkey": str(treasury_pda), "is_signer": False, "is_writable": True},
+                    {"pubkey": authority_pubkey, "is_signer": True, "is_writable": False},
+                ],
+                "data_b64": base64.b64encode(_encode_update_threshold(int(new_threshold))).decode("utf-8"),
+            }
+        ],
+    }
 
 
 # ─── Transaction Helpers ──────────────────────────────────────────────────────

@@ -1,15 +1,16 @@
 import time
 import threading
 import requests
+import uuid
 from datetime import datetime
 from agent.analyzer import RiskAuditor
 from agent.models import NewsItem
 from agent.news_engine import NewsEngine
 from agent.solana_client import (
-    get_status, 
-    execute_emergency_pause, 
-    execute_resume, 
-    execute_threshold_update
+    get_status_for_authority,
+    prepare_emergency_pause_tx_for_client,
+    prepare_resume_tx_for_client,
+    prepare_threshold_update_tx_for_client,
 )
 
 class BackgroundMonitor:
@@ -17,14 +18,17 @@ class BackgroundMonitor:
     Automated background process fetching market data.
     Now with Dynamic Thresholds and Auto-Recovery.
     """
-    def __init__(self, analyzer: RiskAuditor, callback=None):
+    def __init__(self, analyzer: RiskAuditor, callback=None, tx_request_callback=None):
         self.analyzer = analyzer
         self.callback = callback
+        self.tx_request_callback = tx_request_callback
         self.news_engine = NewsEngine()
         self.last_price = None
         self.history = []
         self.notifications = []
         self.is_running = False
+        self.authority_pubkey = None
+        self._stop_event = threading.Event()
         self.safe_streak = 0  # Tracks consecutive low-risk assessments
         
         self.current_status = {
@@ -38,12 +42,21 @@ class BackgroundMonitor:
         }
         self._lock = threading.Lock()
 
+    def set_authority_pubkey(self, authority_pubkey: str | None):
+        with self._lock:
+            self.authority_pubkey = authority_pubkey
+
     def start(self):
         if not self.is_running:
             self.is_running = True
+            self._stop_event.clear()
             thread = threading.Thread(target=self._monitor_loop, daemon=True)
             thread.start()
             print("[MONITOR] Background risk monitor started.")
+
+    def stop(self):
+        self.is_running = False
+        self._stop_event.set()
 
     def _fetch_market_data(self):
         """Fetches real SOL/USDT price from CoinGecko Public API."""
@@ -62,7 +75,10 @@ class BackgroundMonitor:
         Sync one snapshot of on-chain and market state.
         Returns current price or None.
         """
-        sol_status = get_status()
+        if self.authority_pubkey:
+            sol_status = get_status_for_authority(self.authority_pubkey)
+        else:
+            sol_status = {"connected": False, "account_missing": True}
         price, change_24h = self._fetch_market_data()
 
         with self._lock:
@@ -119,9 +135,14 @@ class BackgroundMonitor:
                 self.callback(self.get_state())
             
             # Sleep at the END of the loop, so the first run is instant
-            time.sleep(30)
+            if self._stop_event.wait(30):
+                break
 
     def _trigger_risk_analysis(self, event_text: str):
+        # Without an authorized authority pubkey we cannot read treasury state
+        # nor perform on-chain actions.
+        if not self.authority_pubkey:
+            return
         news = NewsItem(
             id=f"auto_{int(time.time())}",
             headline="АУДИТОРСКИЙ СИГНАЛ",
@@ -147,35 +168,43 @@ class BackgroundMonitor:
                 if assessment.action_required and assessment.risk_score >= active_threshold:
                     if not current_pause_state:
                         print(f"[AUTONOMOUS] High Risk ({assessment.risk_score}). Triggering On-Chain Pause.")
-                        tx_hash, tx_err = execute_emergency_pause(assessment.reason, assessment.risk_score)
-                        if tx_hash:
-                            assessment_data["tx_hash"] = tx_hash
+                        if self.authority_pubkey and self.tx_request_callback:
+                            tx_id = f"auto_{uuid.uuid4().hex}"
+                            assessment_data["tx_request_id"] = tx_id
                             assessment_data["tx_action"] = "emergency_pause"
-                        if tx_err:
-                            assessment_data["tx_error"] = tx_err
+                            assessment_data["tx_status"] = "requested"
+                            prepared = prepare_emergency_pause_tx_for_client(
+                                self.authority_pubkey,
+                                assessment.reason,
+                                assessment.risk_score,
+                            )
+                            self.tx_request_callback(tx_id, "emergency_pause", prepared)
                     self.safe_streak = 0
                 
                 # 2. DARS (Dynamic Threshold Update)
                 rec_threshold = assessment.recommended_threshold
                 if rec_threshold and abs(rec_threshold - active_threshold) >= 5:
                     print(f"[AUTONOMOUS] DARS: Adjusting on-chain threshold to {rec_threshold}.")
-                    tx_hash, tx_err = execute_threshold_update(rec_threshold)
-                    if tx_hash:
-                        assessment_data["threshold_tx_hash"] = tx_hash
-                    if tx_err:
-                        assessment_data["threshold_tx_error"] = tx_err
+                    if self.authority_pubkey and self.tx_request_callback:
+                        tx_id = f"auto_{uuid.uuid4().hex}"
+                        assessment_data["tx_request_id"] = tx_id
+                        assessment_data["tx_action"] = "update_threshold"
+                        assessment_data["tx_status"] = "requested"
+                        prepared = prepare_threshold_update_tx_for_client(self.authority_pubkey, rec_threshold)
+                        self.tx_request_callback(tx_id, "update_threshold", prepared)
 
                 # 3. Autonomous Recovery (Resume)
                 if assessment.risk_score < 30:
                     self.safe_streak += 1
                     if self.safe_streak >= 5 and current_pause_state:
                         print(f"[AUTONOMOUS] Recovery detected (Safe Streak: {self.safe_streak}). Resuming Treasury.")
-                        tx_hash, tx_err = execute_resume()
-                        if tx_hash:
-                            assessment_data["tx_hash"] = tx_hash
+                        if self.authority_pubkey and self.tx_request_callback:
+                            tx_id = f"auto_{uuid.uuid4().hex}"
+                            assessment_data["tx_request_id"] = tx_id
                             assessment_data["tx_action"] = "resume"
-                        if tx_err:
-                            assessment_data["tx_error"] = tx_err
+                            assessment_data["tx_status"] = "requested"
+                            prepared = prepare_resume_tx_for_client(self.authority_pubkey)
+                            self.tx_request_callback(tx_id, "resume", prepared)
                         self.safe_streak = 0
                 else:
                     self.safe_streak = 0
@@ -207,7 +236,45 @@ class BackgroundMonitor:
     def get_state(self):
         with self._lock:
             return {
+                "is_running": self.is_running,
                 "status": self.current_status,
                 "history": self.history,
                 "notifications": self.notifications
             }
+
+    def register_tx_result(self, tx_id: str, tx_hash: str | None = None, tx_error: str | None = None):
+        """
+        Update history entry after client wallet signed/sent tx.
+        """
+        with self._lock:
+            for item in self.history:
+                if item.get("tx_request_id") == tx_id:
+                    if tx_hash:
+                        item["tx_hash"] = tx_hash
+                        item["tx_status"] = "confirmed"
+                    if tx_error:
+                        item["tx_error"] = tx_error
+                        item["tx_status"] = "error"
+                    break
+
+    def add_tx_request_history(self, tx_id: str, action: str, reason: str | None = None):
+        """
+        Insert a placeholder history entry for a manual tx request.
+        Later, `register_tx_result` will fill tx_hash / tx_error.
+        """
+        with self._lock:
+            ts = datetime.now().strftime("%H:%M:%S")
+            self.history.insert(0, {
+                "id": tx_id[:8],
+                "risk_score": 0,
+                "reason": reason or f"Запрошена транзакция: {action}",
+                "action_required": False,
+                "recommended_threshold": None,
+                "confidence_score": 0,
+                "timestamp": ts,
+                "tx_request_id": tx_id,
+                "tx_action": action,
+                "tx_status": "requested",
+            })
+            if len(self.history) > 30:
+                self.history.pop()

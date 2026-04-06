@@ -6,6 +6,7 @@
     <title>Risk Manager / Live Engine</title>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
     <script src="https://cdn.socket.io/4.7.2/socket.io.min.js"></script>
+    <script src="https://unpkg.com/@solana/web3.js@1.95.4/lib/index.iife.js"></script>
     <style>
         :root {
             --bg-color: #0b0c10;
@@ -28,6 +29,34 @@
             display: flex;
             flex-direction: column;
             overflow-x: hidden;
+        }
+
+        /* Crypto-ish visual layer (subtle vectors + grid) */
+        body::before {
+            content: '';
+            position: fixed;
+            inset: 0;
+            background:
+                radial-gradient(700px circle at 10% 10%, rgba(255,204,0,0.09), transparent 55%),
+                radial-gradient(700px circle at 90% 18%, rgba(52,199,89,0.08), transparent 55%),
+                radial-gradient(700px circle at 50% 95%, rgba(255,59,48,0.06), transparent 60%),
+                linear-gradient(to bottom, rgba(255,255,255,0.02), rgba(0,0,0,0));
+            z-index: -2;
+            pointer-events: none;
+        }
+        body::after {
+            content: '';
+            position: fixed;
+            inset: -2px;
+            background-image:
+                linear-gradient(to right, rgba(255,255,255,0.035) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255,255,255,0.035) 1px, transparent 1px);
+            background-size: 72px 72px;
+            mask-image: radial-gradient(circle at 50% 35%, rgba(0,0,0,1), rgba(0,0,0,0) 70%);
+            z-index: -1;
+            pointer-events: none;
+            opacity: 0.55;
+            transform: translateZ(0);
         }
 
         /* --- Marquee --- */
@@ -202,6 +231,8 @@
             <div class="actions">
                 <button class="btn btn-primary" onclick="reqAnalysis()" id="btn-audit">ПРОВЕРИТЬ СЕЙЧАС</button>
                 <button class="btn btn-secondary" onclick="syncChainState()" id="btn-update">СИНХРОНИЗИРОВАТЬ БЛОКЧЕЙН</button>
+                <button class="btn btn-secondary" onclick="connectWallet()" id="btn-connect">ПОДКЛЮЧИТЬ КОШЕЛЕК</button>
+                <button class="btn btn-secondary" onclick="toggleBot()" id="btn-bot">БОТ: ВКЛ</button>
                 <button class="btn btn-unlock hidden" onclick="manageTx('resume')" id="btn-resume">РАЗБЛОКИРОВАТЬ СРЕДСТВА</button>
                 <button class="btn btn-init hidden" onclick="manageTx('initialize')" id="btn-init">ИНИЦИАЛИЗИРОВАТЬ PDA</button>
             </div>
@@ -223,6 +254,15 @@
     <script>
         const socket = io();
         let lastNotificationId = null;
+        let walletPubkey = null;
+        let isBotRunning = true;
+
+        function base64ToBytes(b64) {
+            const bin = atob(b64);
+            const bytes = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+            return bytes;
+        }
 
         const ICONS = {
             success: '<path d="M20 6L9 17l-5-5"></path>',
@@ -249,16 +289,16 @@
 
         function renderState(state) {
             if (!state || !state.status) return;
-            const onChain = state.status.on_chain;
-            const history = state.history;
+            const onChain = state.status.on_chain || {};
+            const history = state.history || [];
             const latestRisk = history.length > 0 ? history[0].risk_score : 0;
             const reason = history.length > 0 ? history[0].reason : "Ожидание событий...";
 
             // Ticker & Sync
-            document.getElementById('ticker-bal').innerText = `${onChain.agent_balance_sol} SOL`;
-            document.getElementById('ticker-bal-2').innerText = `${onChain.agent_balance_sol} SOL`;
+            document.getElementById('ticker-bal').innerText = `${onChain.agent_balance_sol || 0} SOL`;
+            document.getElementById('ticker-bal-2').innerText = `${onChain.agent_balance_sol || 0} SOL`;
             if (onChain.risk_threshold) { document.getElementById('ticker-thresh').innerText = `${onChain.risk_threshold}%`; }
-            updateTime.innerText = `Обновлено: ${state.status.last_check}`;
+            updateTime.innerText = `Обновлено: ${state.status.last_check || "Никогда"}`;
 
             // Main Logic
             let type = 'success';
@@ -280,6 +320,16 @@
             // Buttons State
             document.getElementById('btn-resume').classList.toggle('hidden', !onChain.is_paused);
             document.getElementById('btn-init').classList.toggle('hidden', !onChain.account_missing);
+
+            // Bot + wallet controls
+            isBotRunning = !!state.is_running;
+            const btnBot = document.getElementById('btn-bot');
+            if (btnBot) {
+                btnBot.innerText = `БОТ: ${isBotRunning ? 'ВКЛ' : 'ВЫКЛ'}`;
+                btnBot.disabled = !walletPubkey;
+            }
+            const btnConnect = document.getElementById('btn-connect');
+            if (btnConnect) btnConnect.disabled = !!walletPubkey;
 
             // History Feed
             if (history.length > 0 && emptyState) emptyState.remove();
@@ -313,6 +363,113 @@
 
         socket.on('state_update', renderState);
 
+        async function connectWallet() {
+            if (!window.solana || !window.solana.isPhantom) {
+                showToast("Phantom wallet не найден. Установи Phantom.");
+                return;
+            }
+            try {
+                const resp = await window.solana.connect();
+                walletPubkey = resp.publicKey.toString();
+                showToast("Кошелек подключен. Авторизация...");
+
+                // 1) Ask backend for a nonce
+                const nonceRes = await fetch('/api/auth/nonce', {
+                    method: 'POST',
+                    credentials: 'include'
+                });
+                const nonceData = await nonceRes.json();
+                if (nonceData.error) throw new Error(nonceData.error);
+
+                // 2) Sign challenge message
+                const encodedMessage = new TextEncoder().encode(nonceData.message);
+                const signed = await window.solana.signMessage(encodedMessage, 'utf8');
+                const signatureB64 = signed.signature;
+
+                // 3) Verify signature on backend
+                const verifyRes = await fetch('/api/auth/verify', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    credentials: 'include',
+                    body: JSON.stringify({
+                        pubkey: walletPubkey,
+                        nonce: nonceData.nonce,
+                        signature: signatureB64
+                    })
+                });
+                const verifyData = await verifyRes.json();
+                if (!verifyRes.ok) throw new Error(verifyData.error || 'Auth failed');
+
+                showToast("Авторизация успешна.");
+                socket.emit('wallet_connected', { pubkey: walletPubkey });
+                await new Promise(r => setTimeout(r, 500));
+                await syncChainState(true);
+            } catch (e) {
+                showToast("Подключение кошелька отменено.");
+            }
+        }
+
+        async function toggleBot() {
+            const btn = document.getElementById('btn-bot');
+            const origText = btn.innerText;
+            btn.disabled = true;
+            btn.innerText = "БОТ: ПЕРЕКЛЮЧАЮ...";
+            try {
+                if (!walletPubkey) {
+                    showToast("Сначала подключи кошелек.");
+                    return;
+                }
+                const endpoint = isBotRunning ? '/api/monitor/stop' : '/api/monitor/start';
+                const res = await fetch(endpoint, { method: 'POST', credentials: 'include' });
+                const state = await res.json();
+                renderState(state);
+            } catch (e) {
+                showToast("Ошибка переключения бота.");
+            } finally {
+                btn.disabled = false;
+                btn.innerText = origText;
+            }
+        }
+
+        async function signPreparedAndSend(payload) {
+            const prepared = payload.prepared;
+            const instruction = prepared.instructions[0];
+
+            const programId = new solanaWeb3.PublicKey(instruction.program_id);
+            const keys = instruction.accounts.map(a => ({
+                pubkey: new solanaWeb3.PublicKey(a.pubkey),
+                isSigner: a.is_signer,
+                isWritable: a.is_writable
+            }));
+
+            const dataBytes = base64ToBytes(instruction.data_b64);
+            const tx = new solanaWeb3.Transaction();
+            tx.feePayer = new solanaWeb3.PublicKey(prepared.fee_payer);
+            tx.recentBlockhash = prepared.recent_blockhash;
+            tx.add(new solanaWeb3.TransactionInstruction({
+                programId,
+                keys,
+                data: dataBytes
+            }));
+
+            const sig = await window.solana.signAndSendTransaction(tx);
+            socket.emit('tx_result', { tx_id: payload.tx_id, tx_hash: sig });
+        }
+
+        socket.on('tx_request', async (payload) => {
+            try {
+                if (!walletPubkey) {
+                    showToast("Сначала подключи кошелек для подписи.");
+                    return;
+                }
+                await signPreparedAndSend(payload);
+            } catch (e) {
+                const msg = (e && e.message) ? e.message : String(e);
+                showToast("Ошибка подписи/отправки транзакции.");
+                socket.emit('tx_result', { tx_id: payload.tx_id, tx_error: msg });
+            }
+        });
+
         async function reqAnalysis() {
             const btn = document.getElementById('btn-audit');
             btn.disabled = true; btn.innerText = "СКАНИРОВАНИЕ...";
@@ -320,7 +477,8 @@
                 const res = await fetch('/api/analyze', {
                     method: 'POST',
                     headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({ news: 'Принудительный запрос аудита администратором' })
+                    body: JSON.stringify({ news: 'Принудительный запрос аудита администратором' }),
+                    credentials: 'include'
                 });
                 const data = await res.json();
                 if (data.error) showToast("Ошибка анализа: " + data.error);
@@ -335,7 +493,7 @@
             const btn = document.getElementById('btn-update');
             btn.innerText = "СИНХРОНИЗАЦИЯ...";
             try {
-                const res = await fetch('/api/monitor/refresh', { method: 'POST' });
+                const res = await fetch('/api/monitor/refresh', { method: 'POST', credentials: 'include' });
                 const state = await res.json();
                 renderState(state);
                 if (!silent) showToast("Состояние синхронизировано.");
@@ -352,7 +510,7 @@
             const origText = btn.innerText;
             btn.disabled = true; btn.innerText = "ПОДПИСЬ ТРАНЗАКЦИИ...";
             try {
-                const res = await fetch(`/api/${action}`, { method: 'POST' });
+                const res = await fetch(`/api/${action}`, { method: 'POST', credentials: 'include' });
                 const data = await res.json();
                 if(data.error) showToast("Blockchain Error: " + data.error);
                 else showToast("Успех.");
